@@ -26,7 +26,7 @@ sensor:
   height: 256
   output_encoding: jpeg-rgb
   jpeg_quality: 85
-  instruction: Pick up the object and place it in the target bin
+  instruction: Pick up the green object and place it in the black bin
   joint_names:
     - shoulder_pan
     - shoulder_lift
@@ -36,7 +36,7 @@ sensor:
     - gripper
 
 actions:
-  actuation_enabled: false
+  actuation_enabled: true
   stale_timeout_s: 0.5
   stream_reconnect_s: 1.0
   publish_rate_limit_hz: 10
@@ -44,7 +44,7 @@ actions:
 safety:
   limits_required_for_actuation: true
   limits_required_for_validation: true
-  max_delta_per_step: 0.01
+  max_delta_per_step: 2.0
   joint_limits:
     shoulder_pan: [-1.91986, 1.91986]
     shoulder_lift: [-1.74533, 1.74533]

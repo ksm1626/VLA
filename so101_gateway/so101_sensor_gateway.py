@@ -356,7 +356,7 @@ class SO101SensorGateway:
         return joints
 
     def _publish_action(self, packet: pb2.ActionPacket) -> None:
-        joints = self._latest_joints_for_action()
+        _, _, joints = self._snapshot()
         targets = validate_action_packet(
             packet,
             expected_joint_names=self.joint_names,
@@ -426,6 +426,7 @@ class SO101SensorGateway:
     def run(self) -> int:
         """Run the ROS2 node and gateway workers."""
         import rclpy
+        from rclpy.executors import ExternalShutdownException
         from sensor_msgs.msg import Image, JointState
 
         self._joint_state_msg_cls = JointState
@@ -456,15 +457,17 @@ class SO101SensorGateway:
 
         try:
             rclpy.spin(self._node)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, ExternalShutdownException):
             pass
         finally:
             self._stop_event.set()
             sensor_thread.join(timeout=2)
             action_thread.join(timeout=2)
             channel.close()
-            self._node.destroy_node()
-            rclpy.shutdown()
+            if self._node is not None:
+                self._node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
         return 0
 
 
