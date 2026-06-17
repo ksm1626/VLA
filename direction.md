@@ -13,7 +13,7 @@
 - 공유기는 외부 고정 IP를 할당받음
 - 공유기 설정 권한 보유
 - 기존 제조사 환경은 수정하지 않는 것이 원칙
-- 연구용 코드는 Docker에서 실행 예정
+- 연구용 코드는 우선 단일 Python gateway로 실행 예정
 
 제조사 ROS2 주요 토픽:
 
@@ -55,7 +55,7 @@ v1은 **B안**으로 진행한다.
 SO101 제조사 ROS2
         |
         v
-SO101 Docker Gateway
+SO101 Python Gateway
   - ROS2 Humble/rclpy
   - /front_cam, /top_cam, /joint_states 구독
   - raw-ish sensor packet 생성
@@ -338,7 +338,7 @@ SO101 Gateway의 publish 조건:
 - 제조사 controller의 control rate 및 내부 보간 여부
 - 안전한 HOLD 방식
 - SSH tunnel disconnect 시 동작
-- SO101 Docker에서 ROS2 topic 구독/발행 가능 여부
+- SO101 단일 Python gateway에서 ROS2 topic 구독/발행 가능 여부
 
 ---
 
@@ -367,7 +367,7 @@ SO101 Gateway는 ROS2와 안전을 담당한다. A6000 `RemoteSO101Robot`는 공
 
 1. `PROJECT.md`와 구현 디렉토리를 B안 기준으로 정리: 완료
 2. custom gRPC proto 설계: sensor packet, action packet, heartbeat: 완료
-3. SO101 Gateway skeleton 구현: ROS2 없는 mock mode 우선: A6000 mock 완료
+3. SO101 Gateway skeleton 구현: 단일 Python gateway scaffold 완료
 4. A6000 `RemoteSO101Robot` adapter 구현: 완료
 5. 공식 LeRobot RobotClient가 `RemoteSO101Robot`를 사용할 수 있게 registration/config 연결: 완료
 6. A6000 localhost mock packet으로 RobotClient <-> PolicyServer handshake 검증: 완료
@@ -385,7 +385,7 @@ SO101 Gateway는 ROS2와 안전을 담당한다. A6000 `RemoteSO101Robot`는 공
 SO101 제조사 ROS2
         |
         v
-SO101 Docker Gateway
+SO101 Python Gateway
         |
         | custom gRPC over SSH tunnel
         v

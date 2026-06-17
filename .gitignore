@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+logs/
+
+# Local environments
+.venv/
+.venv-*/
+
+# User-provided datasets and generated artifacts
+outputs/

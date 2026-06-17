@@ -10,7 +10,7 @@ v1 목표는 **공개 SO101/SO100 계열 데이터로 fine-tuned SmolVLA를 A600
 - A6000에서 공식 LeRobot `PolicyServer` 실행
 - A6000에서 공식 LeRobot `RobotClient`와 `RemoteSO101Robot` adapter 실행
 - SO101 PC의 제조사 ROS2 bringup 무수정 유지
-- SO101 Docker Gateway에서 로컬 ROS2 topic 구독/발행
+- SO101 단일 Python Gateway에서 로컬 ROS2 topic 구독/발행
 - SSH tunnel + custom gRPC로 sensor/action packet 전달
 - 모든 실물 action의 SO101-side safety gate 통과
 
@@ -56,7 +56,7 @@ A6000 Server
 - A6000은 ROS2 topic을 직접 구독/발행하지 않는다.
 - A6000에는 ROS2가 없어도 된다.
 - SO101 PC는 제조사 bringup과 hardware control을 유지한다.
-- SO101 연구용 코드는 Docker에서 실행한다.
+- SO101 연구용 코드는 우선 단일 Python gateway로 실행한다.
 - A6000은 Python 3.12 LeRobot/SmolVLA 환경을 유지한다.
 - 공식 LeRobot `RobotClient <-> PolicyServer` async 흐름은 유지한다.
 - SO101 Gateway와 A6000 `RemoteSO101Robot` 사이만 custom gRPC로 구현한다.
@@ -222,7 +222,7 @@ A6000에서 할 일:
 - 제조사 controller의 control rate 및 내부 보간 여부
 - 안전한 HOLD 방식
 - SSH tunnel disconnect 시 action queue clear 및 HOLD/FAULT 동작
-- SO101 Docker에서 ROS2 topic 구독/발행 가능 여부
+- SO101 단일 Python gateway에서 ROS2 topic 구독/발행 가능 여부
 
 Hard gate 결과는 `docs/environment_audit.md`에 기록한다.
 
@@ -249,6 +249,8 @@ Hard gate 결과는 `docs/environment_audit.md`에 기록한다.
 - LeRobot `Robot` interface 기반 `RemoteSO101` adapter 추가
 - A6000 mock SO101 Gateway 추가
 - official LeRobot RobotClient + PolicyServer + mock Gateway 통합 검증 완료
+- SO101 단일 Python Gateway scaffold 추가
+- SO101 Gateway packet encoding/safety helper test 추가
 
 현재 구현 파일:
 
@@ -258,6 +260,7 @@ configs/policy_server.smolvla.yaml
 configs/robot_client.so101.yaml
 configs/remote_so101.yaml
 configs/mock_gateway.so101.yaml
+configs/so101_gateway.yaml
 training/run_finetune.py
 training/validate_lerobot_env.py
 training/lerobot_config.py
@@ -265,6 +268,7 @@ policy/run_policy_server.py
 policy/validate_checkpoint.py
 robot_client/
 remote_so101/
+so101_gateway/
 proto/
 scripts/
 tests/
@@ -307,7 +311,7 @@ logs/
 
 - `policy/`: checkpoint validation, PolicyServer wrapper
 - `remote_so101/`: A6000 `RemoteSO101Robot` adapter
-- `so101_gateway/`: SO101 Docker에서 실행할 ROS2 Gateway
+- `so101_gateway/`: SO101 PC에서 실행할 단일 Python ROS2 Gateway
 - `proto/`: custom gRPC schema
 - `configs/`: training, policy server, gateway, remote robot 설정
 - `tests/`: mock packet, gRPC round-trip, safety tests
@@ -360,12 +364,14 @@ logs/
 
 ### Phase 6. SO101 Gateway Read-only
 
-- SO101 Docker에서 ROS2 Humble/rclpy 실행
+- SO101 PC에서 ROS2 Humble/rclpy 단일 Python gateway 실행
 - `/front_cam`, `/top_cam`, `/joint_states` 구독
 - sensor packet 생성
 - SSH tunnel을 통한 A6000 전송
 
-완료 조건: 10분 이상 sensor packet 수신 안정성 확인
+상태: scaffold 및 ROS 없는 helper test 완료.
+
+완료 조건: 실제 SO101 PC에서 10분 이상 sensor packet 수신 안정성 확인
 
 ### Phase 7. Dry-run Action Path
 

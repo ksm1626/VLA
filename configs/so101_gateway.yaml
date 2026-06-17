@@ -1,0 +1,48 @@
+# SO101-side single-file gateway config.
+#
+# Run on the SO101 robot PC after sourcing the vendor ROS2 workspace:
+#   source ~/physicai_arm_ws/install/setup.bash
+#   python3 so101_gateway/so101_sensor_gateway.py --config configs/so101_gateway.yaml
+#
+# The bridge host/port should normally point at a local SSH tunnel endpoint.
+
+bridge:
+  host: 127.0.0.1
+  port: 49100
+  gateway_id: so101_robot
+
+ros:
+  node_name: so101_sensor_gateway
+  qos_depth: 5
+  front_camera_topic: /front_cam
+  top_camera_topic: /top_cam
+  joint_states_topic: /joint_states
+  joint_targets_topic: /joint_targets
+
+sensor:
+  fps: 5
+  stale_timeout_s: 1.0
+  width: 256
+  height: 256
+  output_encoding: jpeg-rgb
+  jpeg_quality: 85
+  instruction: Pick up the object and place it in the target bin
+  joint_names:
+    - shoulder_pan
+    - shoulder_lift
+    - elbow_flex
+    - wrist_flex
+    - wrist_roll
+    - gripper
+
+actions:
+  actuation_enabled: false
+  stale_timeout_s: 0.5
+  stream_reconnect_s: 1.0
+  publish_rate_limit_hz: 20
+
+safety:
+  limits_required_for_actuation: true
+  max_delta_per_step: 0.05
+  joint_limits: {}
+
