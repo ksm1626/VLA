@@ -1,0 +1,27 @@
+# SmolVLA fine-tuning config.
+# This wrapper follows Hugging Face LeRobot's official `lerobot-train` CLI.
+
+policy:
+  path: lerobot/smolvla_base
+  device: cuda
+  push_to_hub: false
+  repo_id: null
+  # svla_so101_pickplace has two cameras (`side`, `up`), while SmolVLA expects
+  # camera1/camera2/camera3. Fill the third camera input with an empty camera.
+  empty_cameras: 1
+
+dataset:
+  # Use either repo_id or root. Keep root null when training from a Hub dataset.
+  repo_id: lerobot/svla_so101_pickplace
+  root: null
+  rename_map:
+    observation.images.side: observation.images.camera1
+    observation.images.up: observation.images.camera2
+
+training:
+  output_dir: outputs/train/smolvla_so101_2
+  job_name: smolvla_so101_training
+  batch_size: 64
+  steps: 20000
+  wandb_enable: false
+  extra_args: []

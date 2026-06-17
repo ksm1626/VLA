@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package so101remote;
+
+message ImagePayload {
+  bytes data = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  string encoding = 4;  // rgb8, bgr8, jpeg-rgb, jpeg-bgr
+}
+
+message SensorPacket {
+  uint64 sequence_id = 1;
+  int64 timestamp_ns = 2;
+  string instruction = 3;
+  ImagePayload front_image = 4;
+  ImagePayload top_image = 5;
+  repeated string joint_names = 6;
+  repeated float joint_positions = 7;
+}
+
+message PushSensorReply {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message ActionPacket {
+  uint64 sequence_id = 1;
+  int64 timestamp_ns = 2;
+  repeated string joint_names = 3;
+  repeated float joint_targets = 4;
+}
+
+message GatewayStatus {
+  string gateway_id = 1;
+  uint64 last_sequence_id = 2;
+}
+
+message BridgeStatus {
+  bool ready = 1;
+  string message = 2;
+  uint64 latest_sequence_id = 3;
+  uint32 queued_actions = 4;
+}
+
+service SO101RemoteBridge {
+  rpc PushSensorPacket(SensorPacket) returns (PushSensorReply);
+  rpc StreamActions(GatewayStatus) returns (stream ActionPacket);
+  rpc Heartbeat(GatewayStatus) returns (BridgeStatus);
+}

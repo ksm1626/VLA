@@ -1,0 +1,25 @@
+# A6000-only mock SO101 Gateway config.
+
+bridge:
+  host: 127.0.0.1
+  port: 49100
+  gateway_id: mock_so101
+
+sensor:
+  fps: 5
+  duration_s: 20.0
+  width: 256
+  height: 256
+  encoding: jpeg-rgb
+  jpeg_quality: 85
+  instruction: Pick up the object and place it in the target bin
+  joint_names:
+    - shoulder_pan
+    - shoulder_lift
+    - elbow_flex
+    - wrist_flex
+    - wrist_roll
+    - gripper
+
+actions:
+  stop_after_actions: 1

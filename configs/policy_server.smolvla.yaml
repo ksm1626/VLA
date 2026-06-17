@@ -1,0 +1,16 @@
+# SmolVLA policy server config.
+# The LeRobot async PolicyServer only needs host/port at startup.
+# Policy checkpoint/device/chunk settings are sent later by the RobotClient handshake.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+client_handshake_defaults:
+  policy_type: smolvla
+  pretrained_name_or_path: checkpoints/smolvla_so101
+  policy_device: cuda
+  actions_per_chunk: 30
+  chunk_size_threshold: 0.6
+  aggregate_fn_name: null
+

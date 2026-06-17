@@ -1,0 +1,39 @@
+# A6000-side RemoteSO101Robot + official LeRobot RobotClient config.
+
+bridge:
+  id: default
+  host: 127.0.0.1
+  port: 49100
+
+robot:
+  id: remote_so101_mock
+  sensor_timeout_s: 2.0
+  image_width: 256
+  image_height: 256
+  image_channels: 3
+  front_camera_key: camera1
+  top_camera_key: camera2
+  joint_names:
+    - shoulder_pan
+    - shoulder_lift
+    - elbow_flex
+    - wrist_flex
+    - wrist_roll
+    - gripper
+
+policy:
+  server_address: 127.0.0.1:8080
+  policy_type: smolvla
+  pretrained_name_or_path: checkpoints/smolvla_so101
+  policy_device: cuda
+  client_device: cpu
+  actions_per_chunk: 5
+  chunk_size_threshold: 0.6
+  aggregate_fn_name: latest_only
+
+runtime:
+  fps: 5
+  task: Pick up the object and place it in the target bin
+  duration_s: 20.0
+  max_steps: 20
+  stop_after_actions: 1
