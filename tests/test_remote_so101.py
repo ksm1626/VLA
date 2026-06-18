@@ -60,6 +60,56 @@ class RemoteSO101Test(unittest.TestCase):
         self.assertEqual(list(action.joint_names), JOINT_NAMES)
         self.assertEqual(list(action.joint_targets)[-1], 0.5)
 
+    def test_remote_robot_converts_so101_units(self) -> None:
+        bridge_id = "unit-test-remote-so101-units"
+        state = get_bridge_state(bridge_id)
+        front = np.zeros((4, 4, 3), dtype=np.uint8)
+        top = np.ones((4, 4, 3), dtype=np.uint8)
+        packet = pb2.SensorPacket(
+            sequence_id=1,
+            timestamp_ns=123,
+            instruction="test task",
+            front_image=pb2.ImagePayload(data=front.tobytes(), width=4, height=4, encoding="rgb8"),
+            top_image=pb2.ImagePayload(data=top.tobytes(), width=4, height=4, encoding="rgb8"),
+            joint_names=[
+                "shoulder_pan",
+                "shoulder_lift",
+                "elbow_flex",
+                "wrist_flex",
+                "wrist_roll",
+                "gripper",
+            ],
+            joint_positions=[np.pi / 2, 0.0, 0.0, 0.0, -np.pi / 2, 0.8],
+        )
+        accepted, message = state.push_sensor_packet(packet)
+        self.assertTrue(accepted, message)
+
+        config = RemoteSO101Config(id="unit", bridge_id=bridge_id, image_width=4, image_height=4)
+        robot = RemoteSO101(config)
+        robot.connect()
+
+        observation = robot.get_observation()
+        self.assertAlmostEqual(observation["shoulder_pan"], 90.0, places=5)
+        self.assertAlmostEqual(observation["wrist_roll"], -90.0, places=5)
+        self.assertAlmostEqual(observation["gripper"], 33.0)
+
+        robot.send_action(
+            {
+                "shoulder_pan": 90.0,
+                "shoulder_lift": 0.0,
+                "elbow_flex": 0.0,
+                "wrist_flex": 0.0,
+                "wrist_roll": -90.0,
+                "gripper": 16.5,
+            }
+        )
+        action = state.get_action(timeout_s=0.1)
+        self.assertIsNotNone(action)
+        assert action is not None
+        self.assertAlmostEqual(action.joint_targets[0], np.pi / 2, places=5)
+        self.assertAlmostEqual(action.joint_targets[4], -np.pi / 2, places=5)
+        self.assertAlmostEqual(action.joint_targets[5], 0.4, places=5)
+
 
 if __name__ == "__main__":
     unittest.main()

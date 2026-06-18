@@ -14,10 +14,10 @@ bridge:
 ros:
   node_name: so101_sensor_gateway
   qos_depth: 5
-  front_camera_topic: /front_cam
-  top_camera_topic: /top_cam
-  joint_states_topic: /joint_states
-  joint_targets_topic: /joint_targets
+  front_camera_topic: /arm/front_cam
+  top_camera_topic: /arm/top_cam
+  joint_states_topic: /follower/joint_states
+  joint_targets_topic: /follower/joint_targets
 
 sensor:
   fps: 5
@@ -39,10 +39,16 @@ actions:
   actuation_enabled: false
   stale_timeout_s: 0.5
   stream_reconnect_s: 1.0
-  publish_rate_limit_hz: 20
+  publish_rate_limit_hz: 10
 
 safety:
   limits_required_for_actuation: true
-  max_delta_per_step: 0.05
-  joint_limits: {}
-
+  limits_required_for_validation: true
+  max_delta_per_step: 0.01
+  joint_limits:
+    shoulder_pan: [-1.91986, 1.91986]
+    shoulder_lift: [-1.74533, 1.74533]
+    elbow_flex: [-1.69, 1.69]
+    wrist_flex: [-1.65806, 1.65806]
+    wrist_roll: [-2.74385, 2.84121]
+    gripper: [-0.174533, 1.74533]

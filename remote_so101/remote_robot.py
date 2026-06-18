@@ -9,7 +9,8 @@ from lerobot.types import RobotAction, RobotObservation
 
 from remote_so101.bridge import BridgeState, get_bridge_state
 from remote_so101.config import RemoteSO101Config
-from remote_so101.packet_codec import sensor_packet_to_robot_observation
+from remote_so101.packet_codec import sensor_packet_positions_by_name, sensor_packet_to_robot_observation
+from remote_so101.unit_adapter import policy_action_to_ros_targets
 
 
 class RemoteSO101(Robot):
@@ -24,6 +25,7 @@ class RemoteSO101(Robot):
         self._is_connected = False
         self._bridge_state: BridgeState = get_bridge_state(config.bridge_id)
         self._last_sequence_id: int | None = None
+        self._last_ros_positions_by_name: dict[str, float] | None = None
 
     @property
     def observation_features(self) -> dict[str, type | tuple[int, int, int]]:
@@ -74,13 +76,18 @@ class RemoteSO101(Robot):
             last_sequence_id=self._last_sequence_id,
         )
         self._last_sequence_id = int(packet.sequence_id)
+        self._last_ros_positions_by_name = sensor_packet_positions_by_name(packet)
         return sensor_packet_to_robot_observation(packet, self.config)
 
     def send_action(self, action: RobotAction) -> RobotAction:
         """Queue an action packet for the SO101 gateway."""
         if not self.is_connected:
             raise RuntimeError("RemoteSO101 is not connected")
-        ordered_targets = [float(action[name]) for name in self.config.joint_names]
+        ordered_targets = policy_action_to_ros_targets(
+            action,
+            self.config,
+            current_ros_positions=self._last_ros_positions_by_name,
+        )
         self._bridge_state.enqueue_action(self.config.joint_names, ordered_targets)
         return {name: float(action[name]) for name in self.config.joint_names}
 

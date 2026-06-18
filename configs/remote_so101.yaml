@@ -20,6 +20,22 @@ robot:
     - wrist_flex
     - wrist_roll
     - gripper
+  unit_adapter:
+    enabled: true
+    arm_joint_names:
+      - shoulder_pan
+      - shoulder_lift
+      - elbow_flex
+      - wrist_flex
+      - wrist_roll
+    gripper_joint_name: gripper
+    gripper_action_mode: linear
+    gripper_policy_min: 0.0
+    gripper_policy_max: 33.0
+    gripper_ros_closed: 0.0
+    gripper_ros_open: 0.8
+    gripper_ros_min: -0.174533
+    gripper_ros_max: 1.74533
 
 policy:
   server_address: 127.0.0.1:8080

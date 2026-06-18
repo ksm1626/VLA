@@ -6,14 +6,33 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import site
 import sys
 import threading
 import time
 from pathlib import Path
 
+os.environ.setdefault("PYTHONNOUSERSITE", "1")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _remove_user_site_from_sys_path() -> None:
+    """Keep conda/venv imports isolated from ~/.local packages."""
+    user_sites = site.getusersitepackages()
+    if isinstance(user_sites, str):
+        user_sites = [user_sites]
+    resolved_user_sites = {str(Path(path).resolve()) for path in user_sites}
+    sys.path[:] = [
+        path
+        for path in sys.path
+        if str(Path(path).resolve()) not in resolved_user_sites
+    ]
+
+
+_remove_user_site_from_sys_path()
 
 from lerobot.async_inference.configs import RobotClientConfig  # noqa: E402
 from lerobot.async_inference.robot_client import RobotClient  # noqa: E402
@@ -30,6 +49,7 @@ def _make_client_config(config: dict) -> RobotClientConfig:
     runtime = section(config, "runtime")
 
     joint_names = robot.get("joint_names") or list(DEFAULT_JOINT_NAMES)
+    unit_adapter = robot.get("unit_adapter") or {}
     remote_robot_config = RemoteSO101Config(
         id=str(robot.get("id", "remote_so101")),
         bridge_id=str(bridge.get("id", "default")),
@@ -42,6 +62,18 @@ def _make_client_config(config: dict) -> RobotClientConfig:
         front_camera_key=str(robot.get("front_camera_key", "camera1")),
         top_camera_key=str(robot.get("top_camera_key", "camera2")),
         joint_names=[str(name) for name in joint_names],
+        arm_joint_names=[
+            str(name) for name in unit_adapter.get("arm_joint_names", list(DEFAULT_JOINT_NAMES[:5]))
+        ],
+        gripper_joint_name=str(unit_adapter.get("gripper_joint_name", "gripper")),
+        unit_adapter_enabled=bool(unit_adapter.get("enabled", True)),
+        gripper_action_mode=str(unit_adapter.get("gripper_action_mode", "linear")),
+        gripper_policy_min=float(unit_adapter.get("gripper_policy_min", 0.0)),
+        gripper_policy_max=float(unit_adapter.get("gripper_policy_max", 33.0)),
+        gripper_ros_closed=float(unit_adapter.get("gripper_ros_closed", 0.0)),
+        gripper_ros_open=float(unit_adapter.get("gripper_ros_open", 0.8)),
+        gripper_ros_min=float(unit_adapter.get("gripper_ros_min", -0.174533)),
+        gripper_ros_max=float(unit_adapter.get("gripper_ros_max", 1.74533)),
     )
 
     return RobotClientConfig(
@@ -100,7 +132,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     """Run the bounded official RobotClient loop."""
     args = parse_args()
-    os.environ.setdefault("PYTHONNOUSERSITE", "1")
     logging.basicConfig(level=logging.INFO)
 
     config = load_yaml(args.config)

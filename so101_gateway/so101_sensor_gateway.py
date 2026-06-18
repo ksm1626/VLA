@@ -205,11 +205,12 @@ def validate_action_packet(
 
     joint_limits = safety_cfg.get("joint_limits") or {}
     limits_required = bool(safety_cfg.get("limits_required_for_actuation", True))
+    limits_required_for_validation = bool(safety_cfg.get("limits_required_for_validation", False))
     actuation_enabled = bool(action_cfg.get("actuation_enabled", False))
-    if actuation_enabled and limits_required:
+    if (actuation_enabled or limits_required_for_validation) and limits_required:
         missing_limits = [name for name in expected_joint_names if name not in joint_limits]
         if missing_limits:
-            raise ValueError(f"joint limits missing for actuation: {', '.join(missing_limits)}")
+            raise ValueError(f"joint limits missing: {', '.join(missing_limits)}")
 
     for name, target in zip(expected_joint_names, targets, strict=True):
         limit = joint_limits.get(name)
@@ -343,20 +344,19 @@ class SO101SensorGateway:
                 print(f"Sensor packet build failed: {exc}", flush=True)
             self._stop_event.wait(interval_s)
 
-    def _publish_action(self, packet: pb2.ActionPacket) -> None:
-        if not bool(self.action_cfg.get("actuation_enabled", False)):
-            print(
-                "DRY-RUN action",
-                f"sequence_id={packet.sequence_id}",
-                f"targets={[round(float(v), 5) for v in packet.joint_targets]}",
-                flush=True,
-            )
-            return
-
+    def _latest_joints_for_action(self) -> JointSnapshot:
         with self._lock:
             joints = self._joints
         if joints is None:
-            raise RuntimeError("cannot publish action before joint state is available")
+            raise RuntimeError("cannot process action before joint state is available")
+
+        stale_timeout_ns = int(float(self.sensor_cfg.get("stale_timeout_s", 1.0)) * 1e9)
+        if now_ns() - joints.timestamp_ns > stale_timeout_ns:
+            raise RuntimeError("cannot process action with stale joint state")
+        return joints
+
+    def _publish_action(self, packet: pb2.ActionPacket) -> None:
+        joints = self._latest_joints_for_action()
         targets = validate_action_packet(
             packet,
             expected_joint_names=self.joint_names,
@@ -364,6 +364,21 @@ class SO101SensorGateway:
             action_cfg=self.action_cfg,
             safety_cfg=self.safety_cfg,
         )
+
+        if not bool(self.action_cfg.get("actuation_enabled", False)):
+            current_by_name = dict(zip(joints.names, joints.positions, strict=True))
+            deltas = [
+                abs(target - float(current_by_name[name]))
+                for name, target in zip(self.joint_names, targets, strict=True)
+            ]
+            print(
+                "DRY-RUN valid action",
+                f"sequence_id={packet.sequence_id}",
+                f"targets={[round(float(v), 5) for v in targets]}",
+                f"max_delta={max(deltas):.6f}",
+                flush=True,
+            )
+            return
 
         publish_rate_limit_hz = float(self.action_cfg.get("publish_rate_limit_hz", 20))
         min_interval_ns = int(1e9 / publish_rate_limit_hz) if publish_rate_limit_hz > 0 else 0
@@ -389,10 +404,20 @@ class SO101SensorGateway:
                 for action in stub.StreamActions(status):
                     if self._stop_event.is_set():
                         return
+                    local_action = pb2.ActionPacket(
+                        sequence_id=action.sequence_id,
+                        timestamp_ns=now_ns(),
+                        joint_names=list(action.joint_names),
+                        joint_targets=list(action.joint_targets),
+                    )
                     try:
-                        self._publish_action(action)
+                        self._publish_action(local_action)
                     except Exception as exc:  # noqa: BLE001
-                        print(f"Rejected action sequence_id={action.sequence_id}: {exc}", flush=True)
+                        print(
+                            f"Rejected action sequence_id={action.sequence_id}: {exc}",
+                            f"targets={[round(float(v), 5) for v in local_action.joint_targets]}",
+                            flush=True,
+                        )
             except grpc.RpcError as exc:
                 if not self._stop_event.is_set():
                     print(f"Action stream disconnected: {exc}; reconnecting in {reconnect_s:.2f}s", flush=True)
@@ -463,4 +488,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

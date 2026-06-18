@@ -32,3 +32,13 @@ class RemoteSO101Config(RobotConfig):
     front_camera_key: str = "camera1"
     top_camera_key: str = "camera2"
     joint_names: list[str] = field(default_factory=lambda: list(DEFAULT_JOINT_NAMES))
+    arm_joint_names: list[str] = field(default_factory=lambda: list(DEFAULT_JOINT_NAMES[:5]))
+    gripper_joint_name: str = "gripper"
+    unit_adapter_enabled: bool = True
+    gripper_action_mode: str = "linear"
+    gripper_policy_min: float = 0.0
+    gripper_policy_max: float = 33.0
+    gripper_ros_closed: float = 0.0
+    gripper_ros_open: float = 0.8
+    gripper_ros_min: float = -0.174533
+    gripper_ros_max: float = 1.74533

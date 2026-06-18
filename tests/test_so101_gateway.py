@@ -14,9 +14,11 @@ from remote_so101.proto_modules import pb2
 from so101_gateway.so101_sensor_gateway import (
     EncodedImage,
     JointSnapshot,
+    SO101SensorGateway,
     build_sensor_packet,
     encode_rgb_image,
     image_msg_to_rgb_array,
+    now_ns,
     validate_action_packet,
 )
 
@@ -101,12 +103,51 @@ class SO101GatewayHelpersTest(unittest.TestCase):
         config = load_yaml("configs/so101_gateway.yaml")
         self.assertFalse(config["actions"]["actuation_enabled"])
         self.assertTrue(config["safety"]["limits_required_for_actuation"])
+        self.assertTrue(config["safety"]["limits_required_for_validation"])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "minimal.yaml"
             path.write_text("actions:\n  actuation_enabled: false\n", encoding="utf-8")
             minimal = load_yaml(path)
             self.assertFalse(minimal["actions"]["actuation_enabled"])
+
+    def test_gateway_dry_run_validates_action(self) -> None:
+        config = {
+            "bridge": {"host": "127.0.0.1", "port": 49100},
+            "ros": {
+                "front_camera_topic": "/front",
+                "top_camera_topic": "/top",
+                "joint_states_topic": "/joint_states",
+                "joint_targets_topic": "/joint_targets",
+            },
+            "sensor": {"joint_names": ["j0", "j1"], "stale_timeout_s": 1.0},
+            "actions": {"actuation_enabled": False, "stale_timeout_s": 1.0},
+            "safety": {
+                "limits_required_for_actuation": True,
+                "limits_required_for_validation": True,
+                "max_delta_per_step": 0.05,
+                "joint_limits": {"j0": [-1.0, 1.0], "j1": [-1.0, 1.0]},
+            },
+        }
+        gateway = SO101SensorGateway(config)
+        gateway._joints = JointSnapshot(["j0", "j1"], [0.0, 0.0], timestamp_ns=now_ns())
+
+        packet = pb2.ActionPacket(
+            sequence_id=1,
+            timestamp_ns=now_ns(),
+            joint_names=["j0", "j1"],
+            joint_targets=[0.01, -0.01],
+        )
+        gateway._publish_action(packet)
+
+        bad_packet = pb2.ActionPacket(
+            sequence_id=2,
+            timestamp_ns=now_ns(),
+            joint_names=["j0", "j1"],
+            joint_targets=[0.2, 0.0],
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            gateway._publish_action(bad_packet)
 
 
 if __name__ == "__main__":

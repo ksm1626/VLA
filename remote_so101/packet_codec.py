@@ -6,6 +6,7 @@ import numpy as np
 
 from remote_so101.config import RemoteSO101Config
 from remote_so101.proto_modules import pb2
+from remote_so101.unit_adapter import ros_joint_to_policy
 
 
 def decode_image_payload(payload: pb2.ImagePayload) -> np.ndarray:
@@ -47,7 +48,17 @@ def sensor_packet_to_robot_observation(
     if missing:
         raise ValueError(f"Sensor packet is missing joints: {', '.join(missing)}")
 
-    observation = {name: float(positions_by_name[name]) for name in config.joint_names}
+    observation = {
+        name: ros_joint_to_policy(name, float(positions_by_name[name]), config)
+        for name in config.joint_names
+    }
     observation[config.front_camera_key] = decode_image_payload(packet.front_image)
     observation[config.top_camera_key] = decode_image_payload(packet.top_image)
     return observation
+
+
+def sensor_packet_positions_by_name(packet: pb2.SensorPacket) -> dict[str, float]:
+    """Return raw SO101 ROS positions from a SensorPacket."""
+    if len(packet.joint_names) != len(packet.joint_positions):
+        raise ValueError("joint_names and joint_positions length mismatch")
+    return dict(zip(packet.joint_names, (float(v) for v in packet.joint_positions), strict=True))
