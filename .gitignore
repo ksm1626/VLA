@@ -9,4 +9,9 @@ logs/
 
 # User-provided datasets and generated artifacts
 outputs/
-docs/
+datasets/native/*
+datasets/lerobot/*
+!datasets/native/.gitkeep
+!datasets/lerobot/.gitkeep
+docs/*
+!docs/*.md

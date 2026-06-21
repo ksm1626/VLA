@@ -1,0 +1,56 @@
+# SO101 local teleop dataset recorder config.
+#
+# Run on the SO101 robot PC after sourcing the vendor ROS2 workspace:
+#   source ~/physicai_arm_ws/install/setup.bash
+#   source ~/vla_gateway_env/bin/activate
+#   python so101_gateway/record_so101_episode.py \
+#     --config configs/so101_recording.yaml \
+#     --task "Pick up the cube and place it in the target bin" \
+#     --teleop-source leader
+
+dataset:
+  root: ~/so101_datasets/so101_pickplace_v1
+  name: so101_pickplace_v1
+  robot: so101
+  fps: 10
+
+topics:
+  front_camera: /arm/front_cam
+  top_camera: /arm/top_cam
+  joint_states: /follower/joint_states
+  joint_targets: /follower/joint_targets
+  leader_joint_states: /leader/joint_states
+  joy: /joy
+  target_pose: /target_pose
+  gripper_open: /gripper_open
+
+recording:
+  width: 640
+  height: 480
+  video_codec: mp4v
+  stale_timeout_s: 1.0
+  require_action: true
+  include_debug_topics: true
+
+schema:
+  joint_names:
+    - shoulder_pan
+    - shoulder_lift
+    - elbow_flex
+    - wrist_flex
+    - wrist_roll
+    - gripper
+  state_unit: radian
+  action_unit: radian
+  action_type: absolute_joint_position
+
+export:
+  image_width: 256
+  image_height: 256
+  arm_joint_unit: degree
+  gripper_policy_min: 0.0
+  gripper_policy_max: 33.0
+  gripper_ros_closed: 0.0
+  gripper_ros_open: 0.8
+  gripper_ros_min: -0.174533
+  gripper_ros_max: 1.74533
