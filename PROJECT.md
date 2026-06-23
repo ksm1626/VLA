@@ -237,8 +237,6 @@ Hard gate 결과는 `docs/environment_audit.md`에 기록한다.
 - SmolVLA fine-tuning wrapper 추가
 - LeRobot PolicyServer wrapper 추가
 - fine-tuning/policy server YAML config 추가
-- ROS2 Humble 설치/검증 스크립트 추가
-- 기존 `robot_client/` scaffold 추가
 - fine-tuned checkpoint symlink 고정: `checkpoints/smolvla_so101`
 - offline checkpoint validation script 추가
 - fine-tuned SmolVLA checkpoint load 및 sample inference 검증 완료
@@ -251,24 +249,26 @@ Hard gate 결과는 `docs/environment_audit.md`에 기록한다.
 - official LeRobot RobotClient + PolicyServer + mock Gateway 통합 검증 완료
 - SO101 단일 Python Gateway scaffold 추가
 - SO101 Gateway packet encoding/safety helper test 추가
+- SO101 local teleop native recorder 추가
+- native dataset validator 및 LeRobotDataset converter 추가
 
 현재 구현 파일:
 
 ```text
 configs/finetune.smolvla.yaml
 configs/policy_server.smolvla.yaml
-configs/robot_client.so101.yaml
 configs/remote_so101.yaml
 configs/mock_gateway.so101.yaml
 configs/so101_gateway.yaml
+configs/so101_recording.yaml
 training/run_finetune.py
 training/validate_lerobot_env.py
 training/lerobot_config.py
 policy/run_policy_server.py
 policy/validate_checkpoint.py
-robot_client/
 remote_so101/
 so101_gateway/
+recording/
 proto/
 scripts/
 tests/
@@ -276,8 +276,9 @@ tests/
 
 주의:
 
-- 기존 `robot_client/`는 이전 A6000-side ROS2 구조의 scaffold다.
-- B안에서는 `robot_client/`를 그대로 확장하기보다 `so101_gateway/`, `remote_so101/`, `proto/` 중심으로 재정리한다.
+- v1 runtime에서는 A6000이 ROS2 topic을 직접 구독하지 않는다.
+- SO101 ROS2와 LeRobot Python 3.12 환경은 같은 process로 합치지 않는다.
+- 실물 구동 config의 기본값은 항상 `actuation_enabled=false`로 둔다.
 
 검증 결과:
 
@@ -297,11 +298,12 @@ training/
 policy/
 remote_so101/
 so101_gateway/
+recording/
 proto/
 scripts/
 docs/
 tests/
-data/
+datasets/
 outputs/
 checkpoints/
 logs/
@@ -311,7 +313,8 @@ logs/
 
 - `policy/`: checkpoint validation, PolicyServer wrapper
 - `remote_so101/`: A6000 `RemoteSO101Robot` adapter
-- `so101_gateway/`: SO101 PC에서 실행할 단일 Python ROS2 Gateway
+- `so101_gateway/`: SO101 PC에서 실행할 ROS2 Gateway 및 local recorder
+- `recording/`: native dataset 검증 및 LeRobotDataset 변환
 - `proto/`: custom gRPC schema
 - `configs/`: training, policy server, gateway, remote robot 설정
 - `tests/`: mock packet, gRPC round-trip, safety tests
@@ -393,9 +396,22 @@ logs/
 
 ---
 
+### Phase 9. SO101 Teleop Dataset Recording
+
+상태: 기본 구현 완료.
+
+- SO101 PC에서 LeRobot 없이 MP4 + JSONL native dataset 기록
+- `Enter`로 episode 저장 후 다음 episode 시작
+- `c + Enter`로 episode discard
+- `q + Enter` 또는 `Ctrl+C`로 저장 후 종료
+- A6000에서 native dataset 검증 및 LeRobotDataset 변환
+
+완료 조건: 실제 SO101 teleop 5초 이상 episode 수집, validator 통과, A6000 변환 통과
+
+---
+
 ## 11. Future Work
 
-- teleop 기반 자체 SO101 dataset 수집
 - simulator client
 - SO101 local safety relay 강화
 - Zenoh/DDS Router/VPN+DDS 재검토

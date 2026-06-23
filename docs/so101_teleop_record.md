@@ -23,11 +23,18 @@ record_so101_episode.py
         |
         v
 ~/so101_datasets/so101_pickplace_v1/
-  episodes/episode_000001/
-    frames.jsonl
-    videos/front.mp4
-    videos/top.mp4
-    episode.json
+  episodes/
+    episode_000001/
+      frames.jsonl
+      videos/front.mp4
+      videos/top.mp4
+      episode.json
+    episode_000002/
+      frames.jsonl
+      videos/front.mp4
+      videos/top.mp4
+      episode.json
+    ...
         |
         v
 A6000으로 복사
@@ -292,7 +299,7 @@ python so101_gateway/record_so101_episode.py \
 Recording episode_000001 at 10 FPS
 Task: Pick up the cube and place it in the target bin
 Teleop source: leader
-Press Ctrl+C to finish and save.
+Controls: Enter=save+next, c=discard+next, q=save+quit, Ctrl+C=save+quit
 ```
 
 아직 필수 topic이 준비되지 않았으면 다음처럼 대기한다.
@@ -303,18 +310,40 @@ Waiting for recording inputs: joint target action not received yet
 
 이 경우 teleop이 `/follower/joint_targets`를 만들고 있는지 확인한다.
 
-기록 종료:
+기록 중 조작:
 
-```text
-Ctrl+C
-```
+| 입력 | 동작 |
+|---|---|
+| `Enter` | 현재 episode 저장 후 다음 episode 바로 시작 |
+| `c` + `Enter` | 현재 episode 버리고 다음 episode 바로 시작 |
+| `q` + `Enter` | 현재 episode 저장 후 종료 |
+| `Ctrl+C` | 현재 episode 저장 후 종료 |
 
-정상 저장 예:
+예를 들어 첫 번째 episode를 끝내고 바로 두 번째 episode를 찍고 싶으면 recorder 터미널에서 그냥 `Enter`를 누른다.
+
+정상 저장 후 다음 episode 시작 예:
 
 ```text
 Saved /home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000001
 Frames: 342
+Recording episode_000002 at 10 FPS
 ```
+
+현재 episode가 마음에 들지 않으면 `c`를 입력하고 `Enter`를 누른다.
+
+```text
+Discarded episode_000002: user discarded
+Recording episode_000002 at 10 FPS
+```
+
+종료하려면 `q` 입력 후 `Enter`, 또는 `Ctrl+C`를 사용한다.
+
+```text
+Saved /home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000002
+Frames: 318
+```
+
+`recording.min_frames_per_episode`보다 frame 수가 적은 episode는 저장하지 않고 자동 discard한다. 기본값은 1 frame이다.
 
 ---
 
@@ -334,6 +363,12 @@ dataset:
   dataset.yaml
   episodes/
     episode_000001/
+      episode.json
+      frames.jsonl
+      videos/
+        front.mp4
+        top.mp4
+    episode_000002/
       episode.json
       frames.jsonl
       videos/
@@ -384,9 +419,10 @@ python recording/validate_native_dataset.py \
 
 ```text
 VALID native dataset: /home/soda/so101_datasets/so101_pickplace_v1
-Episodes: 1
-Frames: 342
+Episodes: 2
+Frames: 660
 - episode_000001: frames=342 teleop_source=leader task=Pick up the cube and place it in the target bin
+- episode_000002: frames=318 teleop_source=leader task=Pick up the cube and place it in the target bin
 ```
 
 검증기가 확인하는 것:
@@ -538,7 +574,7 @@ sudo systemctl restart nvargus-daemon
 
 ### validator에서 video frame 수가 안 맞음
 
-녹화 중 프로세스가 강제 종료됐거나 MP4 finalize가 실패했을 가능성이 있다. 정상 종료는 `Ctrl+C` 한 번으로 recorder가 저장 메시지를 출력할 때까지 기다린다.
+녹화 중 프로세스가 강제 종료됐거나 MP4 finalize가 실패했을 가능성이 있다. 정상 종료는 `q` + `Enter` 또는 `Ctrl+C` 한 번으로 recorder가 저장 메시지를 출력할 때까지 기다린다.
 
 ### LeRobot 변환 중 vcodec 에러
 
@@ -568,7 +604,8 @@ SO101에서 episode를 찍기 전:
 
 episode 종료 후:
 
-- `Ctrl+C` 후 `Saved ...`가 출력된다.
+- `Enter`, `q` + `Enter`, 또는 `Ctrl+C` 후 `Saved ...`가 출력된다.
+- 실패한 episode는 `c` + `Enter`로 버릴 수 있다.
 - `python recording/validate_native_dataset.py --root ~/so101_datasets/so101_pickplace_v1`가 통과한다.
 
 A6000에서:

@@ -31,6 +31,8 @@ recording:
   stale_timeout_s: 1.0
   require_action: true
   include_debug_topics: true
+  keyboard_controls: true
+  min_frames_per_episode: 1
 
 schema:
   joint_names:

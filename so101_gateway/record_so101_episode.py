@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record one SO101 teleop episode as a local native dataset.
+"""Record SO101 teleop episodes as a local native dataset.
 
 The recorder intentionally avoids LeRobot, torch, and transformers on the
 SO101 PC. It subscribes to manufacturer ROS2 topics, writes camera streams to
@@ -12,7 +12,10 @@ import argparse
 import json
 import math
 import os
+import queue
+import shutil
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -198,6 +201,7 @@ class NativeEpisodeWriter:
         self._frames_file = None
         self._front_shape: tuple[int, int, int] | None = None
         self._top_shape: tuple[int, int, int] | None = None
+        self._closed = False
 
         self.dataset_root.mkdir(parents=True, exist_ok=True)
         (self.dataset_root / "episodes").mkdir(parents=True, exist_ok=True)
@@ -309,7 +313,7 @@ class NativeEpisodeWriter:
         self._frames_file.flush()
         self.frame_index += 1
 
-    def close(self, *, status: str = "saved") -> Path:
+    def _release_handles(self) -> None:
         if self._front_writer is not None:
             self._front_writer.release()
             self._front_writer = None
@@ -319,6 +323,12 @@ class NativeEpisodeWriter:
         if self._frames_file is not None:
             self._frames_file.close()
             self._frames_file = None
+
+    def close(self, *, status: str = "saved") -> Path:
+        if self._closed:
+            return self.final_dir
+
+        self._release_handles()
 
         ended_at = utc_now_iso()
         episode = {
@@ -343,11 +353,23 @@ class NativeEpisodeWriter:
         }
         (self.tmp_dir / "episode.json").write_text(json.dumps(episode, indent=2) + "\n", encoding="utf-8")
         self.tmp_dir.rename(self.final_dir)
+        self._closed = True
         return self.final_dir
+
+    def discard(self) -> Path:
+        """Close file handles and remove the temporary episode directory."""
+        if self._closed:
+            return self.tmp_dir
+
+        self._release_handles()
+        if self.tmp_dir.exists():
+            shutil.rmtree(self.tmp_dir)
+        self._closed = True
+        return self.tmp_dir
 
 
 class SO101EpisodeRecorder:
-    """ROS2 node wrapper that records one episode."""
+    """ROS2 node wrapper that records consecutive episodes."""
 
     def __init__(self, config: dict[str, Any], *, task: str, teleop_source: str) -> None:
         self.config = config
@@ -361,6 +383,8 @@ class SO101EpisodeRecorder:
         self.stale_timeout_s = float(self.recording_cfg.get("stale_timeout_s", 1.0))
         self.require_action = bool(self.recording_cfg.get("require_action", True))
         self.include_debug_topics = bool(self.recording_cfg.get("include_debug_topics", True))
+        self.keyboard_controls = bool(self.recording_cfg.get("keyboard_controls", True))
+        self.min_frames_per_episode = int(self.recording_cfg.get("min_frames_per_episode", 1))
         self._front: ImageSample | None = None
         self._top: ImageSample | None = None
         self._state: JointSample | None = None
@@ -372,6 +396,10 @@ class SO101EpisodeRecorder:
         self._node = None
         self._writer: NativeEpisodeWriter | None = None
         self._last_wait_log_ns = 0
+        self._writer_lock = threading.RLock()
+        self._command_queue: queue.Queue[str] = queue.Queue()
+        self._stop_event = threading.Event()
+        self._keyboard_thread: threading.Thread | None = None
 
     def _front_callback(self, msg: Any) -> None:
         self._front = ImageSample(image_msg_to_rgb_array(msg), now_ns())
@@ -429,6 +457,10 @@ class SO101EpisodeRecorder:
         return missing
 
     def _tick(self) -> None:
+        self._drain_commands()
+        if self._stop_event.is_set():
+            return
+
         missing = self._missing_inputs()
         if missing:
             current_ns = now_ns()
@@ -437,38 +469,35 @@ class SO101EpisodeRecorder:
                 self._last_wait_log_ns = current_ns
             return
 
-        assert self._writer is not None
         assert self._front is not None
         assert self._top is not None
         assert self._state is not None
         action = self._action if self._action is not None else self._state
         try:
-            self._writer.add_frame(
-                front=self._front,
-                top=self._top,
-                state=self._state,
-                action=action,
-                leader=self._leader,
-                joy=self._joy,
-                target_pose=self._target_pose,
-                gripper_open=self._gripper_open,
-            )
+            with self._writer_lock:
+                if self._writer is None:
+                    return
+                self._writer.add_frame(
+                    front=self._front,
+                    top=self._top,
+                    state=self._state,
+                    action=action,
+                    leader=self._leader,
+                    joy=self._joy,
+                    target_pose=self._target_pose,
+                    gripper_open=self._gripper_open,
+                )
         except Exception as exc:  # noqa: BLE001
             print(f"Recording frame skipped: {exc}", flush=True)
 
-    def run(self) -> int:
-        import rclpy
-        from geometry_msgs.msg import PoseStamped
-        from sensor_msgs.msg import Image, JointState, Joy
-        from std_msgs.msg import Bool
-
+    def _create_writer(self) -> NativeEpisodeWriter:
         fps = int(self.dataset_cfg.get("fps", 10))
         dataset_root = expand_path(self.dataset_cfg["root"])
         width = self.recording_cfg.get("width")
         height = self.recording_cfg.get("height")
         width = None if width is None else int(width)
         height = None if height is None else int(height)
-        self._writer = NativeEpisodeWriter(
+        return NativeEpisodeWriter(
             dataset_root=dataset_root,
             dataset_name=str(self.dataset_cfg.get("name", dataset_root.name)),
             robot=str(self.dataset_cfg.get("robot", "so101")),
@@ -481,6 +510,106 @@ class SO101EpisodeRecorder:
             video_codec=str(self.recording_cfg.get("video_codec", "mp4v")),
             config=self.config,
         )
+
+    def _start_next_episode(self) -> None:
+        with self._writer_lock:
+            self._writer = self._create_writer()
+            print(
+                f"Recording episode_{self._writer.episode_index:06d} at {self._writer.fps} FPS",
+                flush=True,
+            )
+
+    def _finish_current_episode(self, *, save: bool, start_next: bool) -> None:
+        with self._writer_lock:
+            writer = self._writer
+            self._writer = None
+            if writer is None:
+                if start_next and not self._stop_event.is_set():
+                    self._start_next_episode()
+                return
+
+            frame_count = writer.frame_index
+            should_save = save and frame_count >= self.min_frames_per_episode
+            if should_save:
+                out = writer.close(status="saved")
+                print(f"Saved {out}", flush=True)
+                print(f"Frames: {frame_count}", flush=True)
+            else:
+                writer.discard()
+                if save:
+                    reason = f"only {frame_count} frames (< {self.min_frames_per_episode})"
+                else:
+                    reason = "user discarded"
+                print(f"Discarded episode_{writer.episode_index:06d}: {reason}", flush=True)
+
+            if start_next and not self._stop_event.is_set():
+                self._writer = self._create_writer()
+                print(
+                    f"Recording episode_{self._writer.episode_index:06d} at {self._writer.fps} FPS",
+                    flush=True,
+                )
+
+    def _keyboard_loop(self) -> None:
+        while not self._stop_event.is_set():
+            line = sys.stdin.readline()
+            if line == "":
+                return
+            command = line.strip().lower()
+            if command == "":
+                self._command_queue.put("save_next")
+            elif command in {"c", "cancel", "discard"}:
+                self._command_queue.put("discard_next")
+            elif command in {"q", "quit", "exit"}:
+                self._command_queue.put("save_quit")
+                return
+            else:
+                print("Unknown command. Use Enter=save+next, c=discard+next, q=save+quit.", flush=True)
+
+    def _start_keyboard_controls(self) -> None:
+        if not self.keyboard_controls:
+            return
+        self._keyboard_thread = threading.Thread(target=self._keyboard_loop, name="so101_recorder_keyboard", daemon=True)
+        self._keyboard_thread.start()
+
+    def _request_stop(self) -> None:
+        self._stop_event.set()
+        if self._node is None:
+            return
+        context = getattr(self._node, "context", None)
+        if context is None:
+            return
+        try:
+            if context.ok():
+                context.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _handle_command(self, command: str) -> None:
+        if command == "save_next":
+            self._finish_current_episode(save=True, start_next=True)
+        elif command == "discard_next":
+            self._finish_current_episode(save=False, start_next=True)
+        elif command == "save_quit":
+            self._finish_current_episode(save=True, start_next=False)
+            self._request_stop()
+
+    def _drain_commands(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                command = self._command_queue.get_nowait()
+            except queue.Empty:
+                return
+            self._handle_command(command)
+
+    def run(self) -> int:
+        import rclpy
+        from geometry_msgs.msg import PoseStamped
+        from rclpy.executors import ExternalShutdownException
+        from sensor_msgs.msg import Image, JointState, Joy
+        from std_msgs.msg import Bool
+
+        fps = int(self.dataset_cfg.get("fps", 10))
+        self._start_next_episode()
 
         rclpy.init()
         self._node = rclpy.create_node("so101_episode_recorder")
@@ -511,21 +640,23 @@ class SO101EpisodeRecorder:
             )
         self._node.create_timer(1.0 / max(1, fps), self._tick)
 
-        print(f"Recording episode_{self._writer.episode_index:06d} at {fps} FPS", flush=True)
         print(f"Task: {self.task}", flush=True)
         print(f"Teleop source: {self.teleop_source}", flush=True)
-        print("Press Ctrl+C to finish and save.", flush=True)
+        if self.keyboard_controls:
+            print("Controls: Enter=save+next, c=discard+next, q=save+quit, Ctrl+C=save+quit", flush=True)
+            self._start_keyboard_controls()
+        else:
+            print("Press Ctrl+C to finish and save.", flush=True)
         try:
             rclpy.spin(self._node)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, ExternalShutdownException):
             pass
         finally:
-            out = self._writer.close(status="saved")
-            print(f"Saved {out}", flush=True)
-            print(f"Frames: {self._writer.frame_index}", flush=True)
+            self._finish_current_episode(save=True, start_next=False)
             if self._node is not None:
                 self._node.destroy_node()
-            rclpy.shutdown()
+            if rclpy.ok():
+                rclpy.shutdown()
         return 0
 
 

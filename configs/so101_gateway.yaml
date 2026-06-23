@@ -36,7 +36,7 @@ sensor:
     - gripper
 
 actions:
-  actuation_enabled: true
+  actuation_enabled: false
   stale_timeout_s: 0.5
   stream_reconnect_s: 1.0
   publish_rate_limit_hz: 10
