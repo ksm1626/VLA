@@ -438,7 +438,92 @@ Frames: 660
 
 ---
 
-## 8. SO101에서 A6000으로 데이터 복사
+## 8. 녹화 Episode Replay 검증
+
+수집된 episode가 실제 로봇 trajectory로 재현 가능한지 SO101에서 확인할 수 있다. replay는 MP4를 쓰지 않고 `frames.jsonl`의 `action_positions_rad`를 `/follower/joint_targets`로 다시 발행한다.
+
+기본은 dry-run이다. dry-run에서는 로봇에 publish하지 않고, 현재 자세에서 녹화 당시 t=0 자세까지의 이동량과 replay trajectory의 frame별 delta를 출력한다.
+
+```bash
+source ~/physicai_arm_ws/install/setup.bash
+source ~/vla_gateway_env/bin/activate
+cd ~/Desktop/VLA
+
+python so101_gateway/replay_so101_episode.py \
+  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --config configs/so101_gateway.yaml
+```
+
+정상 dry-run 예:
+
+```text
+Replay dry-run summary
+episode=/home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000001
+frames=342 start_frame=0 end_frame=341
+episode_fps=10.000 replay_rate_hz=10.000
+current=[...]
+episode_t0=[...]
+preposition_max_delta=...
+DRY-RUN prepare index=0 max_delta=...
+DRY-RUN replay index=0 max_delta=...
+Dry-run complete. No /follower/joint_targets messages were published.
+```
+
+실제 replay는 두 가지를 모두 만족해야 한다.
+
+- 명령어에 `--actuate`를 붙인다.
+- [configs/so101_gateway.yaml](../configs/so101_gateway.yaml)의 `actions.actuation_enabled`를 `true`로 바꾼다.
+
+실행:
+
+```bash
+python so101_gateway/replay_so101_episode.py \
+  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --config configs/so101_gateway.yaml \
+  --actuate
+```
+
+실제 replay 동작:
+
+```text
+현재 /follower/joint_states 수신
+-> episode 첫 frame의 state_positions_rad로 천천히 이동
+-> start_tolerance_rad 이내인지 확인
+-> action_positions_rad trajectory를 원래 FPS로 재생
+-> 마지막 action을 hold_final_s 동안 유지
+```
+
+기본 안전 옵션:
+
+```text
+prepare-rate-hz          10
+prepare-duration-s       auto
+prepare-max-delta-rad    0.03
+start-tolerance-rad      0.05
+hold-final-s             1.0
+rate-scale               1.0
+```
+
+일부 frame만 replay하려면:
+
+```bash
+python so101_gateway/replay_so101_episode.py \
+  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --config configs/so101_gateway.yaml \
+  --start-frame 20 \
+  --end-frame 80
+```
+
+주의:
+
+- replay 전에는 반드시 validator를 먼저 통과시킨다.
+- 시작 자세 이동도 `/follower/joint_targets` publish로 수행된다.
+- 로봇 주변을 비우고 즉시 중단할 수 있는 상태에서만 `--actuate`를 사용한다.
+- 실제 replay가 끝나면 안전 기본값 유지를 위해 `actions.actuation_enabled`를 다시 `false`로 돌린다.
+
+---
+
+## 9. SO101에서 A6000으로 데이터 복사
 
 GitHub에는 데이터 파일을 올리지 않는다.
 
@@ -466,7 +551,7 @@ python recording/validate_native_dataset.py \
 
 ---
 
-## 9. A6000에서 LeRobotDataset으로 변환
+## 10. A6000에서 LeRobotDataset으로 변환
 
 A6000 터미널:
 
@@ -513,7 +598,7 @@ datasets/lerobot/so101_pickplace_v1/
 
 ---
 
-## 10. Fine-tuning Config에 연결
+## 11. Fine-tuning Config에 연결
 
 [configs/finetune.smolvla.yaml](../configs/finetune.smolvla.yaml)에서 local dataset을 쓰려면 `dataset.root`를 변환 결과로 지정한다.
 
@@ -537,7 +622,7 @@ CUDA_VISIBLE_DEVICES=2 python training/run_finetune.py \
 
 ---
 
-## 11. 자주 나는 문제
+## 12. 자주 나는 문제
 
 ### `/follower/joint_targets`를 못 받아서 recorder가 대기함
 
@@ -592,7 +677,7 @@ python recording/convert_native_to_lerobot.py \
 
 ---
 
-## 12. 최소 체크리스트
+## 13. 최소 체크리스트
 
 SO101에서 episode를 찍기 전:
 
@@ -607,6 +692,8 @@ episode 종료 후:
 - `Enter`, `q` + `Enter`, 또는 `Ctrl+C` 후 `Saved ...`가 출력된다.
 - 실패한 episode는 `c` + `Enter`로 버릴 수 있다.
 - `python recording/validate_native_dataset.py --root ~/so101_datasets/so101_pickplace_v1`가 통과한다.
+- `replay_so101_episode.py` dry-run이 통과한다.
+- 실제 replay는 `--actuate`와 `actions.actuation_enabled=true`를 둘 다 설정한 경우에만 실행한다.
 
 A6000에서:
 

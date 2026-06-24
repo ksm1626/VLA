@@ -251,6 +251,7 @@ Hard gate 결과는 `docs/environment_audit.md`에 기록한다.
 - SO101 Gateway packet encoding/safety helper test 추가
 - SO101 local teleop native recorder 추가
 - native dataset validator 및 LeRobotDataset converter 추가
+- native episode replay dry-run/actuated trajectory 검증 script 추가
 
 현재 구현 파일:
 
@@ -407,6 +408,15 @@ logs/
 - A6000에서 native dataset 검증 및 LeRobotDataset 변환
 
 완료 조건: 실제 SO101 teleop 5초 이상 episode 수집, validator 통과, A6000 변환 통과
+
+### Phase 10. Native Episode Replay
+
+상태: 기본 구현 완료.
+
+- `frames.jsonl`의 t=0 state로 천천히 preposition 후 `action_positions_rad` trajectory replay
+- 기본 dry-run, 실제 publish는 `--actuate`와 config `actions.actuation_enabled=true`가 모두 필요
+
+완료 조건: 실제 SO101에서 dry-run 검증 후 제한된 episode replay 성공
 
 ---
 
