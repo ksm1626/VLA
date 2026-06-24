@@ -22,7 +22,7 @@ SO101 제조사 ROS2 bringup
 record_so101_episode.py
         |
         v
-~/so101_datasets/so101_pickplace_v1/
+/home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/
   episodes/
     episode_000001/
       frames.jsonl
@@ -296,7 +296,7 @@ python so101_gateway/record_so101_episode.py \
 정상 시작 예:
 
 ```text
-Recording episode_000001 at 10 FPS
+Recording episode_000001 at 30 FPS
 Task: Pick up the cube and place it in the target bin
 Teleop source: leader
 Controls: Enter=save+next, c=discard+next, q=save+quit, Ctrl+C=save+quit
@@ -324,22 +324,22 @@ Waiting for recording inputs: joint target action not received yet
 정상 저장 후 다음 episode 시작 예:
 
 ```text
-Saved /home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000001
+Saved /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001
 Frames: 342
-Recording episode_000002 at 10 FPS
+Recording episode_000002 at 30 FPS
 ```
 
 현재 episode가 마음에 들지 않으면 `c`를 입력하고 `Enter`를 누른다.
 
 ```text
 Discarded episode_000002: user discarded
-Recording episode_000002 at 10 FPS
+Recording episode_000002 at 30 FPS
 ```
 
 종료하려면 `q` 입력 후 `Enter`, 또는 `Ctrl+C`를 사용한다.
 
 ```text
-Saved /home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000002
+Saved /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000002
 Frames: 318
 ```
 
@@ -353,13 +353,13 @@ Frames: 318
 
 ```yaml
 dataset:
-  root: ~/so101_datasets/so101_pickplace_v1
+  root: /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1
 ```
 
 저장 결과:
 
 ```text
-~/so101_datasets/so101_pickplace_v1/
+/home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/
   dataset.yaml
   episodes/
     episode_000001/
@@ -412,13 +412,13 @@ source ~/vla_gateway_env/bin/activate
 cd ~/Desktop/VLA
 
 python recording/validate_native_dataset.py \
-  --root ~/so101_datasets/so101_pickplace_v1
+  --root /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1
 ```
 
 정상 예:
 
 ```text
-VALID native dataset: /home/soda/so101_datasets/so101_pickplace_v1
+VALID native dataset: /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1
 Episodes: 2
 Frames: 660
 - episode_000001: frames=342 teleop_source=leader task=Pick up the cube and place it in the target bin
@@ -450,7 +450,7 @@ source ~/vla_gateway_env/bin/activate
 cd ~/Desktop/VLA
 
 python so101_gateway/replay_so101_episode.py \
-  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --episode /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001 \
   --config configs/so101_gateway.yaml
 ```
 
@@ -458,7 +458,7 @@ python so101_gateway/replay_so101_episode.py \
 
 ```text
 Replay dry-run summary
-episode=/home/soda/so101_datasets/so101_pickplace_v1/episodes/episode_000001
+episode=/home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001
 frames=342 start_frame=0 end_frame=341
 episode_fps=10.000 replay_rate_hz=10.000
 current=[...]
@@ -478,7 +478,7 @@ Dry-run complete. No /follower/joint_targets messages were published.
 
 ```bash
 python so101_gateway/replay_so101_episode.py \
-  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --episode /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001 \
   --config configs/so101_gateway.yaml \
   --actuate
 ```
@@ -508,7 +508,7 @@ rate-scale               1.0
 
 ```bash
 python so101_gateway/replay_so101_episode.py \
-  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --episode /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001 \
   --config configs/so101_gateway.yaml \
   --start-frame 20 \
   --end-frame 80
@@ -530,15 +530,15 @@ GitHub에는 데이터 파일을 올리지 않는다.
 SO101에서 A6000으로 복사:
 
 ```bash
-rsync -avh --progress ~/so101_datasets/so101_pickplace_v1/ \
-  pnudtn10@A6000_IP:~/VLA/datasets/native/so101_pickplace_v1/
+rsync -avh --progress /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/ \
+  <A6000_USER>@<A6000_HOST>:~/VLA/datasets/native/so101_pickplace_v1/
 ```
 
 예를 들어 SSH 포트가 따로 있으면:
 
 ```bash
-rsync -avh --progress -e "ssh -p 6519" ~/so101_datasets/so101_pickplace_v1/ \
-  pnudtn10@164.125.19.141:~/VLA/datasets/native/so101_pickplace_v1/
+rsync -avh --progress -e "ssh -p <SSH_PORT>" /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/ \
+  <A6000_USER>@<A6000_HOST>:~/VLA/datasets/native/so101_pickplace_v1/
 ```
 
 A6000에서 확인:
@@ -691,7 +691,7 @@ episode 종료 후:
 
 - `Enter`, `q` + `Enter`, 또는 `Ctrl+C` 후 `Saved ...`가 출력된다.
 - 실패한 episode는 `c` + `Enter`로 버릴 수 있다.
-- `python recording/validate_native_dataset.py --root ~/so101_datasets/so101_pickplace_v1`가 통과한다.
+- `python recording/validate_native_dataset.py --root /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1`가 통과한다.
 - `replay_so101_episode.py` dry-run이 통과한다.
 - 실제 replay는 `--actuate`와 `actions.actuation_enabled=true`를 둘 다 설정한 경우에만 실행한다.
 

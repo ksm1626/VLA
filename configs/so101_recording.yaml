@@ -9,10 +9,10 @@
 #     --teleop-source leader
 
 dataset:
-  root: ~/so101_datasets/so101_pickplace_v1
+  root: /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1
   name: so101_pickplace_v1
   robot: so101
-  fps: 10
+  fps: 30
 
 topics:
   front_camera: /arm/front_cam

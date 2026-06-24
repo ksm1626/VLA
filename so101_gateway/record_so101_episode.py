@@ -255,9 +255,34 @@ class NativeEpisodeWriter:
         height, width = resized.shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*self.video_codec)
         writer = cv2.VideoWriter(str(path), fourcc, float(self.fps), (width, height))
-        if not writer.isOpened():
+        if writer.isOpened():
+            return writer, (height, width, 3), resized
+        writer.release()
+
+        writer = self._open_gstreamer_mp4_writer(path, width=width, height=height)
+        if writer is None:
             raise RuntimeError(f"failed to open video writer: {path}")
         return writer, (height, width, 3), resized
+
+    def _open_gstreamer_mp4_writer(self, path: Path, *, width: int, height: int):
+        import cv2
+
+        fps = max(1, int(round(float(self.fps))))
+        key_interval = max(1, fps)
+        pipeline = (
+            "appsrc format=time do-timestamp=true ! "
+            f"video/x-raw,format=BGR,width={int(width)},height={int(height)},framerate={fps}/1 ! "
+            "videoconvert ! video/x-raw,format=I420 ! "
+            f"x264enc tune=zerolatency speed-preset=ultrafast bitrate=2000 key-int-max={key_interval} ! "
+            "h264parse ! mp4mux faststart=true ! "
+            f"filesink location={path}"
+        )
+        writer = cv2.VideoWriter(pipeline, cv2.CAP_GSTREAMER, 0, float(fps), (int(width), int(height)))
+        if writer.isOpened():
+            print(f"Using GStreamer MP4 writer fallback: {path}", flush=True)
+            return writer
+        writer.release()
+        return None
 
     def _write_video_frame(self, writer, image_rgb: np.ndarray) -> None:
         import cv2

@@ -462,7 +462,7 @@ record 중 조작:
 저장 위치:
 
 ```text
-~/so101_datasets/so101_pickplace_v1/
+/home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/
   dataset.yaml
   episodes/
     episode_000001/
@@ -480,7 +480,7 @@ SO101 또는 A6000에서 검증한다.
 
 ```bash
 python recording/validate_native_dataset.py \
-  --root ~/so101_datasets/so101_pickplace_v1
+  --root /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1
 ```
 
 확인 항목:
@@ -509,7 +509,7 @@ source ~/vla_gateway_env/bin/activate
 cd ~/Desktop/VLA
 
 python so101_gateway/replay_so101_episode.py \
-  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --episode /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001 \
   --config configs/so101_gateway.yaml
 ```
 
@@ -520,7 +520,7 @@ python so101_gateway/replay_so101_episode.py \
 
 ```bash
 python so101_gateway/replay_so101_episode.py \
-  --episode ~/so101_datasets/so101_pickplace_v1/episodes/episode_000001 \
+  --episode /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/episodes/episode_000001 \
   --config configs/so101_gateway.yaml \
   --actuate
 ```
@@ -541,14 +541,14 @@ replay 동작:
 데이터는 GitHub에 올리지 않는다. `rsync`, `scp`, 외장 SSD를 사용한다.
 
 ```bash
-rsync -avh --progress ~/so101_datasets/so101_pickplace_v1/ \
+rsync -avh --progress /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/ \
   <A6000_USER>@<A6000_HOST>:~/VLA/datasets/native/so101_pickplace_v1/
 ```
 
 SSH 포트가 따로 있으면:
 
 ```bash
-rsync -avh --progress -e "ssh -p <SSH_PORT>" ~/so101_datasets/so101_pickplace_v1/ \
+rsync -avh --progress -e "ssh -p <SSH_PORT>" /home/soda/Desktop/VLA/datasets/native/so101_pickplace_v1/ \
   <A6000_USER>@<A6000_HOST>:~/VLA/datasets/native/so101_pickplace_v1/
 ```
 
