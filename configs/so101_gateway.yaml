@@ -20,7 +20,7 @@ ros:
   joint_targets_topic: /follower/joint_targets
 
 sensor:
-  fps: 5
+  fps: 10
   stale_timeout_s: 1.0
   width: 256
   height: 256
@@ -36,15 +36,21 @@ sensor:
     - gripper
 
 actions:
-  actuation_enabled: false
+  actuation_enabled: true
+  clamp_to_joint_limits: true
   stale_timeout_s: 0.5
   stream_reconnect_s: 1.0
-  publish_rate_limit_hz: 10
+  publish_rate_limit_hz: 0
+
+replay:
+  clamp_to_joint_limits: true
+  validate_joint_limits: true
+  validate_max_delta: true
 
 safety:
   limits_required_for_actuation: true
   limits_required_for_validation: true
-  max_delta_per_step: 2.0
+  max_delta_per_step: null
   joint_limits:
     shoulder_pan: [-1.91986, 1.91986]
     shoulder_lift: [-1.74533, 1.74533]

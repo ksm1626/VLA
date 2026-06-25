@@ -100,9 +100,12 @@ class SO101GatewayHelpersTest(unittest.TestCase):
                 current_time_ns=1_100_000_000,
             )
 
-    def test_gateway_config_defaults_are_non_actuating(self) -> None:
+    def test_gateway_config_defaults_match_actuated_so101_runtime(self) -> None:
         config = load_yaml("configs/so101_gateway.yaml")
-        self.assertFalse(config["actions"]["actuation_enabled"])
+        self.assertTrue(config["actions"]["actuation_enabled"])
+        self.assertTrue(config["actions"]["clamp_to_joint_limits"])
+        self.assertEqual(config["actions"]["publish_rate_limit_hz"], 0)
+        self.assertIsNone(config["safety"]["max_delta_per_step"])
         self.assertTrue(config["safety"]["limits_required_for_actuation"])
         self.assertTrue(config["safety"]["limits_required_for_validation"])
 

@@ -28,8 +28,8 @@ def build_command(config: dict[str, Any]) -> list[str]:
 
     repo_id = dataset.get("repo_id")
     root = dataset.get("root")
-    if bool(repo_id) == bool(root):
-        raise ValueError("Set exactly one of `dataset.repo_id` or `dataset.root`")
+    if not repo_id:
+        raise ValueError("Set `dataset.repo_id`; LeRobot requires it even for local datasets")
 
     command = [
         env_executable("lerobot-train"),
@@ -43,8 +43,7 @@ def build_command(config: dict[str, Any]) -> list[str]:
         f"--wandb.enable={optional_bool(training.get('wandb_enable', False))}",
     ]
 
-    if repo_id:
-        command.append(f"--dataset.repo_id={repo_id}")
+    command.append(f"--dataset.repo_id={repo_id}")
     if root:
         command.append(f"--dataset.root={root}")
 

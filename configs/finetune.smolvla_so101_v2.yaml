@@ -1,0 +1,19 @@
+policy:
+  path: checkpoints/smolvla_so101
+  device: cuda
+  push_to_hub: false
+  repo_id: null
+  empty_cameras: 1
+
+dataset:
+  repo_id: local/so101_pickplace_v1
+  root: datasets/lerobot/so101_pickplace_v1
+  rename_map: {}
+
+training:
+  output_dir: outputs/train/smolvla_so101_v2
+  job_name: smolvla_so101_v2_training
+  batch_size: 64
+  steps: 20000
+  wandb_enable: false
+  extra_args: []

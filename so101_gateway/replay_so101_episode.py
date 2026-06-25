@@ -65,9 +65,84 @@ def max_abs_delta(a: list[float], b: list[float]) -> float:
     return max((abs(float(x) - float(y)) for x, y in zip(a, b, strict=True)), default=0.0)
 
 
-def resolve_frames_path(path: str | Path) -> Path:
+def clamp_targets_to_limits(
+    targets: list[float],
+    *,
+    joint_names: list[str],
+    safety_cfg: dict[str, Any],
+) -> tuple[list[float], list[str]]:
+    """Clamp replay targets to configured joint limits before validation."""
+    joint_limits = safety_cfg.get("joint_limits") or {}
+    clamped: list[float] = []
+    changed: list[str] = []
+    for name, value in zip(joint_names, targets, strict=True):
+        limit = joint_limits.get(name)
+        target = float(value)
+        if limit is None:
+            clamped.append(target)
+            continue
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            raise ValueError(f"joint limit for {name} must be [min, max]")
+        low, high = float(limit[0]), float(limit[1])
+        limited = min(max(target, low), high)
+        if limited != target:
+            changed.append(name)
+        clamped.append(limited)
+    return clamped, changed
+
+
+def parse_bool_config(value: Any, *, default: bool, name: str) -> bool:
+    """Parse bool-like config values without treating arbitrary strings as true."""
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{name} must be true or false")
+
+
+def dataset_root_from_recording_config(config_path: str | Path | None) -> Path | None:
+    """Return dataset.root from the recorder config when it is available."""
+    if config_path is None:
+        return None
+    resolved = expand_path(config_path)
+    if not resolved.exists():
+        return None
+    dataset_cfg = section(load_yaml(resolved), "dataset")
+    root = dataset_cfg.get("root")
+    if not root:
+        return None
+    return expand_path(root)
+
+
+def fallback_episode_path(path: Path, dataset_root: Path | None) -> Path:
+    """Map a legacy/nonexistent episode path to the configured native dataset."""
+    if dataset_root is None or path.exists():
+        return path
+
+    episode_name = None
+    if path.name == "frames.jsonl":
+        episode_name = path.parent.name
+    elif path.name.startswith("episode_"):
+        episode_name = path.name
+
+    if not episode_name:
+        return path
+
+    candidate = dataset_root / "episodes" / episode_name
+    if path.name == "frames.jsonl":
+        candidate = candidate / "frames.jsonl"
+    return candidate if candidate.exists() else path
+
+
+def resolve_frames_path(path: str | Path, *, dataset_root: Path | None = None) -> Path:
     """Resolve an episode directory or frames.jsonl path to frames.jsonl."""
-    resolved = expand_path(path)
+    resolved = fallback_episode_path(expand_path(path), dataset_root)
     if resolved.is_dir():
         frames_path = resolved / "frames.jsonl"
     else:
@@ -133,11 +208,12 @@ def load_replay_episode(
     episode_path: str | Path,
     *,
     expected_joint_names: list[str],
+    dataset_root: Path | None = None,
     start_frame: int = 0,
     end_frame: int | None = None,
 ) -> ReplayEpisode:
     """Load and validate a native episode or frame segment for replay."""
-    frames_path = resolve_frames_path(episode_path)
+    frames_path = resolve_frames_path(episode_path, dataset_root=dataset_root)
     rows = validate_rows(read_jsonl(frames_path), expected_joint_names=expected_joint_names)
     if start_frame < 0:
         raise ValueError("start_frame must be >= 0")
@@ -232,6 +308,13 @@ def validate_target(
     )
 
 
+def replay_option(args_value: bool | None, replay_cfg: dict[str, Any], key: str, *, default: bool = True) -> bool:
+    """Resolve a replay option from CLI, then config, then a safe default."""
+    if args_value is not None:
+        return bool(args_value)
+    return parse_bool_config(replay_cfg.get(key), default=default, name=f"replay.{key}")
+
+
 def publish_joint_targets(
     *,
     publisher: Any,
@@ -263,14 +346,66 @@ class SO101EpisodeReplayer:
         self.sensor_cfg = section(config, "sensor")
         self.action_cfg = section(config, "actions")
         self.safety_cfg = section(config, "safety")
+        replay_cfg = config.get("replay") or {}
+        if not isinstance(replay_cfg, dict):
+            raise ValueError("Missing or invalid `replay` config section")
         self.joint_names = [str(name) for name in self.sensor_cfg["joint_names"]]
         self.actuate = bool(args.actuate)
+        self.clamp_to_joint_limits = replay_option(
+            args.clamp_to_joint_limits,
+            replay_cfg,
+            "clamp_to_joint_limits",
+        )
+        self.validate_joint_limits = replay_option(
+            args.validate_joint_limits,
+            replay_cfg,
+            "validate_joint_limits",
+        )
+        self.validate_max_delta = replay_option(
+            args.validate_max_delta,
+            replay_cfg,
+            "validate_max_delta",
+        )
         self._lock = threading.Lock()
         self._joints: JointSnapshot | None = None
         self._node = None
         self._publisher = None
         self._joint_state_msg_cls = None
         self._sequence_id = 1
+        self._clamp_warned = False
+        if not self.clamp_to_joint_limits:
+            print("Replay joint target clamping is disabled.", flush=True)
+        if not self.validate_joint_limits:
+            print("Replay joint limit validation is disabled.", flush=True)
+        if not self.validate_max_delta:
+            print("Replay max-delta validation is disabled.", flush=True)
+
+    def _validation_safety_cfg(self) -> dict[str, Any]:
+        safety_cfg = dict(self.safety_cfg)
+        if not self.validate_joint_limits:
+            safety_cfg["joint_limits"] = {}
+            safety_cfg["limits_required_for_actuation"] = False
+            safety_cfg["limits_required_for_validation"] = False
+        if not self.validate_max_delta:
+            safety_cfg.pop("max_delta_per_step", None)
+        return safety_cfg
+
+    def _maybe_clamp_targets(self, targets: list[float], *, label: str) -> list[float]:
+        if not self.clamp_to_joint_limits:
+            return [float(value) for value in targets]
+        clamped, clamped_joints = clamp_targets_to_limits(
+            targets,
+            joint_names=self.joint_names,
+            safety_cfg=self.safety_cfg,
+        )
+        if clamped_joints and not self._clamp_warned:
+            print(
+                "Clamped replay targets to configured joint limits "
+                f"(first occurrence at {label}: {sorted(set(clamped_joints))})",
+                flush=True,
+            )
+            self._clamp_warned = True
+        return clamped
 
     def _joint_callback(self, msg: Any) -> None:
         snapshot = JointSnapshot(
@@ -324,6 +459,7 @@ class SO101EpisodeReplayer:
         return sequence_id
 
     def _validate_and_publish(self, targets: list[float], *, label: str) -> None:
+        targets = self._maybe_clamp_targets(targets, label=label)
         current = self._ordered_latest_positions()
         sequence_id = self._next_sequence_id()
         validate_target(
@@ -331,7 +467,7 @@ class SO101EpisodeReplayer:
             current_positions=current,
             joint_names=self.joint_names,
             action_cfg=self.action_cfg,
-            safety_cfg=self.safety_cfg,
+            safety_cfg=self._validation_safety_cfg(),
             sequence_id=sequence_id,
         )
         publish_joint_targets(
@@ -353,12 +489,13 @@ class SO101EpisodeReplayer:
     def _validate_dry_run_sequence(self, current: list[float], targets: list[list[float]], *, label: str) -> list[float]:
         simulated = list(current)
         for index, target in enumerate(targets):
+            target = self._maybe_clamp_targets(target, label=f"{label}[{index}]")
             validate_target(
                 targets=target,
                 current_positions=simulated,
                 joint_names=self.joint_names,
                 action_cfg=self.action_cfg,
-                safety_cfg=self.safety_cfg,
+                safety_cfg=self._validation_safety_cfg(),
                 sequence_id=index + 1,
             )
             print(
@@ -400,7 +537,10 @@ class SO101EpisodeReplayer:
         hold_s = float(self.args.hold_final_s)
         if hold_s <= 0:
             return
-        hold_rate_hz = min(max(1.0, replay_rate_hz), float(self.action_cfg.get("publish_rate_limit_hz", 10.0)))
+        publish_limit_hz = float(self.action_cfg.get("publish_rate_limit_hz", 0.0))
+        hold_rate_hz = max(1.0, replay_rate_hz)
+        if publish_limit_hz > 0:
+            hold_rate_hz = min(hold_rate_hz, publish_limit_hz)
         steps = max(1, math.ceil(hold_s * hold_rate_hz))
         self._execute_sequence([final_target] * steps, rate_hz=hold_rate_hz, label="hold")
 
@@ -470,8 +610,31 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--episode", required=True, help="Episode directory or frames.jsonl path.")
     parser.add_argument("--config", default="configs/so101_gateway.yaml")
+    parser.add_argument(
+        "--recording-config",
+        default="configs/so101_recording.yaml",
+        help="Recorder config used to resolve legacy episode paths through dataset.root.",
+    )
     parser.add_argument("--actuate", action="store_true", help="Actually publish /follower/joint_targets.")
     parser.add_argument("--dry-run", action="store_true", help="Explicitly keep dry-run mode; this is the default.")
+    parser.add_argument(
+        "--clamp-to-joint-limits",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Clamp replay targets to safety.joint_limits before validation/publish. Default comes from config.",
+    )
+    parser.add_argument(
+        "--validate-joint-limits",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Validate replay targets against safety.joint_limits. Default comes from config.",
+    )
+    parser.add_argument(
+        "--validate-max-delta",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Validate replay target step deltas against safety.max_delta_per_step. Default comes from config.",
+    )
     parser.add_argument("--prepare-rate-hz", type=float, default=10.0)
     parser.add_argument("--prepare-duration-s", default="auto")
     parser.add_argument("--prepare-max-delta-rad", type=float, default=0.03)
@@ -494,9 +657,11 @@ def main() -> int:
     config = load_yaml(args.config)
     joint_names = [str(name) for name in section(config, "sensor")["joint_names"]]
     try:
+        dataset_root = dataset_root_from_recording_config(args.recording_config)
         episode = load_replay_episode(
             args.episode,
             expected_joint_names=joint_names,
+            dataset_root=dataset_root,
             start_frame=int(args.start_frame),
             end_frame=args.end_frame,
         )

@@ -232,6 +232,47 @@ def validate_action_packet(
     return targets
 
 
+def bool_config(value: Any, *, default: bool, name: str) -> bool:
+    """Parse bool-like config values without accepting typos as truthy."""
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{name} must be true or false")
+
+
+def clamp_action_targets(
+    targets: list[float],
+    *,
+    joint_names: list[str],
+    safety_cfg: dict[str, Any],
+) -> tuple[list[float], list[str]]:
+    """Clamp action targets to configured joint limits."""
+    joint_limits = safety_cfg.get("joint_limits") or {}
+    clamped: list[float] = []
+    changed: list[str] = []
+    for name, target in zip(joint_names, targets, strict=True):
+        value = float(target)
+        limit = joint_limits.get(name)
+        if limit is None:
+            clamped.append(value)
+            continue
+        if not isinstance(limit, (list, tuple)) or len(limit) != 2:
+            raise ValueError(f"joint limit for {name} must be [min, max]")
+        low, high = float(limit[0]), float(limit[1])
+        limited = min(max(value, low), high)
+        if limited != value:
+            changed.append(name)
+        clamped.append(limited)
+    return clamped, changed
+
+
 class SO101SensorGateway:
     """Runtime SO101 ROS2/gRPC gateway."""
 
@@ -242,6 +283,11 @@ class SO101SensorGateway:
         self.sensor_cfg = section(config, "sensor")
         self.action_cfg = section(config, "actions")
         self.safety_cfg = section(config, "safety")
+        self.clamp_to_joint_limits = bool_config(
+            self.action_cfg.get("clamp_to_joint_limits"),
+            default=False,
+            name="actions.clamp_to_joint_limits",
+        )
         self.gateway_id = str(self.bridge_cfg.get("gateway_id", "so101_robot"))
         self.joint_names = [str(name) for name in self.sensor_cfg["joint_names"]]
         self._lock = threading.Lock()
@@ -357,8 +403,29 @@ class SO101SensorGateway:
 
     def _publish_action(self, packet: pb2.ActionPacket) -> None:
         _, _, joints = self._snapshot()
+        packet_for_validation = packet
+        if self.clamp_to_joint_limits:
+            clamped_targets, clamped_joints = clamp_action_targets(
+                [float(value) for value in packet.joint_targets],
+                joint_names=self.joint_names,
+                safety_cfg=self.safety_cfg,
+            )
+            if clamped_joints:
+                print(
+                    f"Clamped action sequence_id={packet.sequence_id}",
+                    f"joints={sorted(set(clamped_joints))}",
+                    f"targets={[round(float(v), 5) for v in clamped_targets]}",
+                    flush=True,
+                )
+                packet_for_validation = pb2.ActionPacket(
+                    sequence_id=packet.sequence_id,
+                    timestamp_ns=packet.timestamp_ns,
+                    joint_names=list(packet.joint_names),
+                    joint_targets=clamped_targets,
+                )
+
         targets = validate_action_packet(
-            packet,
+            packet_for_validation,
             expected_joint_names=self.joint_names,
             current_joints=joints,
             action_cfg=self.action_cfg,
@@ -451,7 +518,8 @@ class SO101SensorGateway:
         sensor_thread.start()
         action_thread.start()
         print(
-            f"SO101 gateway started: bridge={target} actuation_enabled={self.action_cfg.get('actuation_enabled')}",
+            f"SO101 gateway started: bridge={target} actuation_enabled={self.action_cfg.get('actuation_enabled')} "
+            f"clamp_to_joint_limits={self.clamp_to_joint_limits}",
             flush=True,
         )
 
