@@ -1,0 +1,25 @@
+policy:
+  type: pi05
+  pretrained_path: checkpoints/pi05_base
+  device: cuda
+  push_to_hub: false
+  repo_id: null
+  dtype: bfloat16
+  gradient_checkpointing: true
+  train_expert_only: true
+  chunk_size: 50
+  n_action_steps: 50
+  use_relative_actions: false
+
+dataset:
+  repo_id: local/so101_pickplace_v1
+  root: datasets/lerobot/so101_pickplace_v1
+  rename_map: {}
+
+training:
+  output_dir: outputs/train/pi05_so101_v1
+  job_name: pi05_so101_v1_training
+  batch_size: 8
+  steps: 5000
+  wandb_enable: false
+  extra_args: []

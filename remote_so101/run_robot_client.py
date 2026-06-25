@@ -149,6 +149,7 @@ def main() -> int:
 
     print(f"bridge={bridge_config.get('host', '127.0.0.1')}:{bridge_config.get('port', 49100)}")
     print(f"policy_server={client_config.server_address}")
+    print(f"policy_type={client_config.policy_type}")
     print(f"checkpoint={client_config.pretrained_name_or_path}")
     print(f"robot_type={client_config.robot.type}")
     print(f"actions_per_chunk={client_config.actions_per_chunk}")

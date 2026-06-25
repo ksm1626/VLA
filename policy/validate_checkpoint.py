@@ -31,6 +31,10 @@ def _load_train_config(checkpoint: Path) -> dict:
         return json.load(handle)
 
 
+def _has_train_config(checkpoint: Path) -> bool:
+    return (checkpoint / "train_config.json").exists()
+
+
 def _sample_to_batch(sample: dict) -> dict:
     batch = {}
     for key, value in sample.items():
@@ -41,32 +45,23 @@ def _sample_to_batch(sample: dict) -> dict:
     return batch
 
 
-def validate_checkpoint(
+def _validate_policy_on_dataset(
+    *,
     checkpoint: Path,
+    policy_cfg,
+    dataset,
+    rename_map: dict,
     device: str,
     sample_index: int,
     actions_per_chunk: int,
 ) -> None:
-    """Load a checkpoint, run one dataset sample through it, and print key checks."""
-    from lerobot.configs.train import TrainPipelineConfig
-    from lerobot.datasets.factory import make_dataset
+    """Run one dataset sample through a LeRobot policy config."""
     from lerobot.policies.factory import make_policy, make_pre_post_processors
 
-    if not checkpoint.exists():
-        raise FileNotFoundError(f"Checkpoint path does not exist: {checkpoint}")
-
-    train_config = _load_train_config(checkpoint)
-    print(f"checkpoint={checkpoint}")
-    print(f"dataset.repo_id={train_config.get('dataset', {}).get('repo_id')}")
-    print(f"dataset.root={train_config.get('dataset', {}).get('root')}")
-    print(f"rename_map={train_config.get('rename_map')}")
-
-    cfg = TrainPipelineConfig.from_pretrained(checkpoint)
-    cfg.policy.device = device
+    policy_cfg.device = device
 
     start = time.perf_counter()
-    dataset = make_dataset(cfg)
-    policy = make_policy(cfg.policy, ds_meta=dataset.meta, rename_map=cfg.rename_map)
+    policy = make_policy(policy_cfg, ds_meta=dataset.meta, rename_map=rename_map)
     load_s = time.perf_counter() - start
 
     processor_kwargs = {
@@ -78,7 +73,7 @@ def validate_checkpoint(
                 "features": {**policy.config.input_features, **policy.config.output_features},
                 "norm_map": policy.config.normalization_mapping,
             },
-            "rename_observations_processor": {"rename_map": cfg.rename_map},
+            "rename_observations_processor": {"rename_map": rename_map},
         },
     }
     postprocessor_kwargs = {
@@ -91,8 +86,8 @@ def validate_checkpoint(
         }
     }
     preprocessor, postprocessor = make_pre_post_processors(
-        policy_cfg=cfg.policy,
-        pretrained_path=cfg.policy.pretrained_path,
+        policy_cfg=policy_cfg,
+        pretrained_path=policy_cfg.pretrained_path,
         **processor_kwargs,
         **postprocessor_kwargs,
     )
@@ -122,12 +117,126 @@ def validate_checkpoint(
     print(f"dataset_frames={len(dataset)}")
     print(f"input_features={sorted(policy.config.input_features)}")
     print(f"output_features={policy.config.output_features}")
+    print(f"normalization_mapping={policy.config.normalization_mapping}")
     print(f"load_seconds={load_s:.3f}")
     print(f"inference_seconds={inference_s:.3f}")
     print(f"raw_action_chunk_shape={tuple(action_chunk.shape)} finite={raw_finite}")
     print(f"postprocessed_action_chunk_shape={tuple(action_chunk_post.shape)} finite={post_finite}")
     print(f"first_postprocessed_action={action_chunk_post[0].detach().cpu().tolist()}")
     print("checkpoint validation passed.")
+
+
+def _validate_finetuned_checkpoint(
+    *,
+    checkpoint: Path,
+    device: str,
+    sample_index: int,
+    actions_per_chunk: int,
+) -> None:
+    """Validate a checkpoint that includes LeRobot train_config.json."""
+    from lerobot.configs.train import TrainPipelineConfig
+    from lerobot.datasets.factory import make_dataset
+
+    train_config = _load_train_config(checkpoint)
+    print(f"checkpoint={checkpoint}")
+    print(f"dataset.repo_id={train_config.get('dataset', {}).get('repo_id')}")
+    print(f"dataset.root={train_config.get('dataset', {}).get('root')}")
+    print(f"rename_map={train_config.get('rename_map')}")
+
+    cfg = TrainPipelineConfig.from_pretrained(checkpoint)
+    _validate_policy_on_dataset(
+        checkpoint=checkpoint,
+        policy_cfg=cfg.policy,
+        dataset=make_dataset(cfg),
+        rename_map=cfg.rename_map,
+        device=device,
+        sample_index=sample_index,
+        actions_per_chunk=actions_per_chunk,
+    )
+
+
+def _validate_base_checkpoint(
+    *,
+    checkpoint: Path,
+    policy_type: str,
+    dataset_repo_id: str,
+    dataset_root: Path | None,
+    device: str,
+    sample_index: int,
+    actions_per_chunk: int,
+) -> None:
+    """Validate a base policy checkpoint with explicit dataset metadata."""
+    from lerobot.configs.policies import PreTrainedConfig
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.policies.factory import make_policy_config
+
+    print(f"checkpoint={checkpoint}")
+    print(f"dataset.repo_id={dataset_repo_id}")
+    print(f"dataset.root={dataset_root}")
+    print("rename_map={}")
+
+    try:
+        policy_cfg = PreTrainedConfig.from_pretrained(checkpoint)
+    except Exception:
+        policy_cfg = make_policy_config(policy_type)
+
+    if policy_cfg.type != policy_type:
+        raise ValueError(f"Checkpoint policy type is {policy_cfg.type!r}, expected {policy_type!r}")
+    policy_cfg.pretrained_path = checkpoint
+
+    dataset = LeRobotDataset(dataset_repo_id, root=dataset_root)
+    for key in ("observation.state", "action"):
+        stats = dataset.meta.stats.get(key, {})
+        quantile_keys = {"q01", "q99"}.intersection(stats)
+        print(f"{key}.quantile_stats_present={bool(quantile_keys)}")
+
+    _validate_policy_on_dataset(
+        checkpoint=checkpoint,
+        policy_cfg=policy_cfg,
+        dataset=dataset,
+        rename_map={},
+        device=device,
+        sample_index=sample_index,
+        actions_per_chunk=actions_per_chunk,
+    )
+
+
+def validate_checkpoint(
+    checkpoint: Path,
+    device: str,
+    sample_index: int,
+    actions_per_chunk: int,
+    policy_type: str | None = None,
+    dataset_repo_id: str | None = None,
+    dataset_root: Path | None = None,
+) -> None:
+    """Load a checkpoint, run one dataset sample through it, and print key checks."""
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Checkpoint path does not exist: {checkpoint}")
+
+    if _has_train_config(checkpoint):
+        _validate_finetuned_checkpoint(
+            checkpoint=checkpoint,
+            device=device,
+            sample_index=sample_index,
+            actions_per_chunk=actions_per_chunk,
+        )
+        return
+
+    if not policy_type or not dataset_repo_id:
+        raise ValueError(
+            "Base checkpoint validation requires `--policy-type` and `--dataset-repo-id` "
+            "when train_config.json is not present"
+        )
+    _validate_base_checkpoint(
+        checkpoint=checkpoint,
+        policy_type=policy_type,
+        dataset_repo_id=dataset_repo_id,
+        dataset_root=dataset_root,
+        device=device,
+        sample_index=sample_index,
+        actions_per_chunk=actions_per_chunk,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -147,6 +256,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--sample-index", type=int, default=0)
     parser.add_argument("--actions-per-chunk", type=int, default=5)
+    parser.add_argument("--policy-type", default=None)
+    parser.add_argument("--dataset-repo-id", default=None)
+    parser.add_argument("--dataset-root", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -159,6 +271,9 @@ def main() -> int:
         device=args.device,
         sample_index=args.sample_index,
         actions_per_chunk=args.actions_per_chunk,
+        policy_type=args.policy_type,
+        dataset_repo_id=args.dataset_repo_id,
+        dataset_root=args.dataset_root,
     )
     return 0
 

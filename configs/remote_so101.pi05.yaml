@@ -1,4 +1,4 @@
-# A6000-side RemoteSO101Robot + official LeRobot RobotClient config.
+# A6000-side RemoteSO101Robot + LeRobot Pi0.5 RobotClient config.
 
 bridge:
   id: default
@@ -6,7 +6,7 @@ bridge:
   port: 49100
 
 robot:
-  id: remote_so101_mock
+  id: remote_so101_pi05
   sensor_timeout_s: 2.0
   image_width: 256
   image_height: 256
@@ -39,20 +39,16 @@ robot:
 
 policy:
   server_address: 127.0.0.1:8080
-  policy_type: smolvla
-  pretrained_name_or_path: outputs/train/smolvla_so101_v2/checkpoints/020000/pretrained_model
+  policy_type: pi05
+  pretrained_name_or_path: outputs/train/pi05_so101_v1/checkpoints/005000/pretrained_model
   policy_device: cuda
   client_device: cpu
-  actions_per_chunk: 40
+  actions_per_chunk: 50
   chunk_size_threshold: 0.6
   aggregate_fn_name: weighted_average
-  # latest_only      새 chunk가 오면 새 action 우선
-  # weighted_average 기존 action 30%, 새 action 70%
-  # average          기존 action 50%, 새 action 50%
-  # conservative     기존 action 70%, 새 action 30%
 
 runtime:
-  fps: 20
+  fps: 10
   task: Pick up the green object and place it in the black bin
   duration_s: 600.0
   max_steps: 6000
