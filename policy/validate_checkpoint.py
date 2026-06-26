@@ -5,11 +5,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import site
 import sys
 import time
 from pathlib import Path
 
-import torch
+os.environ.setdefault("PYTHONNOUSERSITE", "1")
+
+
+def _remove_user_site_from_sys_path() -> None:
+    """Keep conda/venv imports isolated from ~/.local packages."""
+    user_sites = site.getusersitepackages()
+    if isinstance(user_sites, str):
+        user_sites = [user_sites]
+    resolved_user_sites = {str(Path(path).resolve()) for path in user_sites}
+    sys.path[:] = [
+        path
+        for path in sys.path
+        if str(Path(path).resolve()) not in resolved_user_sites
+    ]
+
+
+_remove_user_site_from_sys_path()
+
+import torch  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "training"))
@@ -45,6 +65,19 @@ def _sample_to_batch(sample: dict) -> dict:
     return batch
 
 
+def _raise_pi05_tokenizer_hint(exc: Exception) -> None:
+    """Add an actionable hint for Pi0.5's gated PaliGemma tokenizer."""
+    message = str(exc)
+    if "google/paligemma-3b-pt-224" in message or "gated repo" in message.lower():
+        raise RuntimeError(
+            "Pi0.5 requires the gated Hugging Face tokenizer "
+            "`google/paligemma-3b-pt-224`. Accept access on Hugging Face, then run "
+            "`huggingface-cli login` or set `HF_TOKEN` in this environment before "
+            "validating/fine-tuning Pi0.5."
+        ) from exc
+    raise exc
+
+
 def _validate_policy_on_dataset(
     *,
     checkpoint: Path,
@@ -61,7 +94,10 @@ def _validate_policy_on_dataset(
     policy_cfg.device = device
 
     start = time.perf_counter()
-    policy = make_policy(policy_cfg, ds_meta=dataset.meta, rename_map=rename_map)
+    try:
+        policy = make_policy(policy_cfg, ds_meta=dataset.meta, rename_map=rename_map)
+    except Exception as exc:
+        _raise_pi05_tokenizer_hint(exc)
     load_s = time.perf_counter() - start
 
     processor_kwargs = {
@@ -85,12 +121,15 @@ def _validate_policy_on_dataset(
             },
         }
     }
-    preprocessor, postprocessor = make_pre_post_processors(
-        policy_cfg=policy_cfg,
-        pretrained_path=policy_cfg.pretrained_path,
-        **processor_kwargs,
-        **postprocessor_kwargs,
-    )
+    try:
+        preprocessor, postprocessor = make_pre_post_processors(
+            policy_cfg=policy_cfg,
+            pretrained_path=policy_cfg.pretrained_path,
+            **processor_kwargs,
+            **postprocessor_kwargs,
+        )
+    except Exception as exc:
+        _raise_pi05_tokenizer_hint(exc)
 
     sample = dataset[sample_index]
     batch = preprocessor(_sample_to_batch(sample))
@@ -161,6 +200,7 @@ def _validate_base_checkpoint(
     policy_type: str,
     dataset_repo_id: str,
     dataset_root: Path | None,
+    rename_map: dict,
     device: str,
     sample_index: int,
     actions_per_chunk: int,
@@ -173,7 +213,7 @@ def _validate_base_checkpoint(
     print(f"checkpoint={checkpoint}")
     print(f"dataset.repo_id={dataset_repo_id}")
     print(f"dataset.root={dataset_root}")
-    print("rename_map={}")
+    print(f"rename_map={rename_map}")
 
     try:
         policy_cfg = PreTrainedConfig.from_pretrained(checkpoint)
@@ -194,7 +234,7 @@ def _validate_base_checkpoint(
         checkpoint=checkpoint,
         policy_cfg=policy_cfg,
         dataset=dataset,
-        rename_map={},
+        rename_map=rename_map,
         device=device,
         sample_index=sample_index,
         actions_per_chunk=actions_per_chunk,
@@ -209,6 +249,7 @@ def validate_checkpoint(
     policy_type: str | None = None,
     dataset_repo_id: str | None = None,
     dataset_root: Path | None = None,
+    rename_map: dict | None = None,
 ) -> None:
     """Load a checkpoint, run one dataset sample through it, and print key checks."""
     if not checkpoint.exists():
@@ -233,6 +274,7 @@ def validate_checkpoint(
         policy_type=policy_type,
         dataset_repo_id=dataset_repo_id,
         dataset_root=dataset_root,
+        rename_map=rename_map or {},
         device=device,
         sample_index=sample_index,
         actions_per_chunk=actions_per_chunk,
@@ -259,6 +301,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-type", default=None)
     parser.add_argument("--dataset-repo-id", default=None)
     parser.add_argument("--dataset-root", type=Path, default=None)
+    parser.add_argument(
+        "--rename-map",
+        default="{}",
+        help="JSON mapping from dataset observation keys to policy observation keys.",
+    )
     return parser.parse_args()
 
 
@@ -274,6 +321,7 @@ def main() -> int:
         policy_type=args.policy_type,
         dataset_repo_id=args.dataset_repo_id,
         dataset_root=args.dataset_root,
+        rename_map=json.loads(args.rename_map),
     )
     return 0
 

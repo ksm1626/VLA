@@ -11,8 +11,8 @@ robot:
   image_width: 256
   image_height: 256
   image_channels: 3
-  front_camera_key: camera1
-  top_camera_key: camera2
+  front_camera_key: base_0_rgb
+  top_camera_key: left_wrist_0_rgb
   joint_names:
     - shoulder_pan
     - shoulder_lift
@@ -40,7 +40,7 @@ robot:
 policy:
   server_address: 127.0.0.1:8080
   policy_type: pi05
-  pretrained_name_or_path: outputs/train/pi05_so101_v1/checkpoints/005000/pretrained_model
+  pretrained_name_or_path: outputs/train/pi05_so101_v1/checkpoints/020000/pretrained_model
   policy_device: cuda
   client_device: cpu
   actions_per_chunk: 50

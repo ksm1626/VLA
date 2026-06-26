@@ -10,16 +10,36 @@ policy:
   chunk_size: 50
   n_action_steps: 50
   use_relative_actions: false
+  input_features:
+    observation.images.base_0_rgb:
+      type: VISUAL
+      shape: [3, 256, 256]
+    observation.images.left_wrist_0_rgb:
+      type: VISUAL
+      shape: [3, 256, 256]
+    observation.images.right_wrist_0_rgb:
+      type: VISUAL
+      shape: [3, 256, 256]
+    observation.state:
+      type: STATE
+      shape: [6]
+  output_features:
+    action:
+      type: ACTION
+      shape: [6]
 
 dataset:
   repo_id: local/so101_pickplace_v1
   root: datasets/lerobot/so101_pickplace_v1
-  rename_map: {}
+  rename_map:
+    observation.images.camera1: observation.images.base_0_rgb
+    observation.images.camera2: observation.images.left_wrist_0_rgb
+    observation.images.camera3: observation.images.right_wrist_0_rgb
 
 training:
   output_dir: outputs/train/pi05_so101_v1
   job_name: pi05_so101_v1_training
-  batch_size: 8
-  steps: 5000
+  batch_size: 16
+  steps: 20000
   wandb_enable: false
   extra_args: []

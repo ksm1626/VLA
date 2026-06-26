@@ -16,3 +16,4 @@ datasets/lerobot/*
 docs/*
 !docs/*.md
 a6000.sh
+checkpoints/pi05_base/

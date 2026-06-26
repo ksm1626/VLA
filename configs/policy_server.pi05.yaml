@@ -8,7 +8,7 @@ server:
 
 client_handshake_defaults:
   policy_type: pi05
-  pretrained_name_or_path: outputs/train/pi05_so101_v1/checkpoints/005000/pretrained_model
+  pretrained_name_or_path: outputs/train/pi05_so101_v1/checkpoints/020000/pretrained_model
   policy_device: cuda
   actions_per_chunk: 50
   chunk_size_threshold: 0.6
